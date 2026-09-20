@@ -1,0 +1,12 @@
+# AF-SDR 構成管理ルール
+
+- バージョン表記はSemantic Versioningの `メジャー.マイナー.パッチ`。初回ビルド成果物は `1.0.0`。
+- 上位の番号を増やすときは下位の番号を0に戻す。
+- メジャー更新は互換性の破棄を伴う変更。ユーザーの指示または定義された明確な設計変更に基づく場合のみ行う。
+- マイナー更新は互換性を保つ機能追加。開発者の判断で行う。
+- パッチ更新は機能追加にあたらない不具合修正・軽微なリファクタリング・調整。開発者の判断で行う。
+- ソリューションルートの `HISTORY.md` に、バージョン番号・日時・変更概要を都度記録する。
+- バージョンをインクリメントして `HISTORY.md` を更新するタイミングで、バージョン更新用のGitコミットを作成する。
+- 製品バージョンの設定元は `AF-SDR/AF-SDR.csproj` の `Version`。成果物と履歴のバージョンを一致させる。
+- .NETのAssemblyVersion/FileVersionは4桁の内部メタデータであり、利用者向けバージョンには3桁のVersion/InformationalVersionを使用する。
+- 検証は `dotnet build AF-SDR.sln -c Release` と `dotnet run --project AF-SDR.Checks -c Release --no-build`。後者はハードウェアを開かない。
