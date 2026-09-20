@@ -17,6 +17,9 @@ internal sealed class SpectrumView : Control
     internal uint CenterFrequency { get; set; } = 80_000_000;
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal uint SampleRate { get; set; } = Receiver.RequestedRate;
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal uint RequestedBandwidth { get; set; }
+    internal DisplayRange Range => new(SampleRate, RequestedBandwidth);
 
     public SpectrumView()
     {
@@ -42,7 +45,7 @@ internal sealed class SpectrumView : Control
     {
         RectangleF plot = PlotBounds;
         if (plot.Width <= 0 || !plot.Contains(point)) return null;
-        double hz = CenterFrequency + ((point.X - plot.Left) / plot.Width - 0.5) * SampleRate;
+        double hz = Range.FrequencyAt(CenterFrequency, (point.X - plot.Left) / plot.Width);
         return hz >= 1 && hz <= uint.MaxValue ? (uint)Math.Round(hz) : null;
     }
 
@@ -119,7 +122,7 @@ internal sealed class SpectrumView : Control
         {
             float x = plot.Left + plot.Width * i / 8;
             g.DrawLine(i == 4 ? center : grid, x, plot.Top, x, plot.Bottom);
-            double mhz = (CenterFrequency + (i / 8.0 - 0.5) * SampleRate) / 1e6;
+            double mhz = Range.FrequencyAt(CenterFrequency, i / 8.0) / 1e6;
             g.DrawString(mhz.ToString("F3"), Font, ink, x, plot.Bottom + 9 * scale, centered);
         }
         g.DrawString("周波数 (MHz)", Font, ink, plot.Left + plot.Width / 2, plot.Bottom + 29 * scale, centered);
@@ -129,7 +132,7 @@ internal sealed class SpectrumView : Control
             plot.Left, plot.Bottom + 53 * scale);
         g.InterpolationMode = InterpolationMode.NearestNeighbor;
         g.PixelOffsetMode = PixelOffsetMode.Half;
-        waterfall.Draw(g, water);
+        waterfall.Draw(g, water, Range);
         g.PixelOffsetMode = PixelOffsetMode.Default;
         g.DrawRectangle(grid, water.X, water.Y, water.Width, water.Height);
         if (pointer is Point cursor && FrequencyAt(cursor).HasValue)
@@ -146,12 +149,13 @@ internal sealed class SpectrumView : Control
             return;
         }
         // Preserve narrow peaks when there are more FFT bins than horizontal pixels.
-        int columns = Math.Min(values.Length, Math.Max(2, (int)plot.Width));
+        double firstBin = Range.FirstBin(values.Length), binWidth = Range.BinWidth(values.Length);
+        int columns = Math.Max(2, Math.Min((int)Math.Ceiling(binWidth), (int)plot.Width));
         var points = new PointF[columns];
         for (int x = 0; x < columns; x++)
         {
-            int first = x * values.Length / columns;
-            int end = (x + 1) * values.Length / columns;
+            int first = Math.Clamp((int)Math.Floor(firstBin + x * binWidth / columns), 0, values.Length - 1);
+            int end = Math.Clamp((int)Math.Ceiling(firstBin + (x + 1) * binWidth / columns), first + 1, values.Length);
             float peak = -140;
             for (int bin = first; bin < end; bin++) peak = Math.Max(peak, values[bin]);
             points[x] = new PointF(plot.Left + x * plot.Width / (columns - 1),

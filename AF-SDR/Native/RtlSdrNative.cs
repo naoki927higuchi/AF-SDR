@@ -18,6 +18,9 @@ internal static class RtlSdrNative
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)] internal static extern int rtlsdr_set_sample_rate(IntPtr device, uint rate);
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)] internal static extern uint rtlsdr_get_sample_rate(IntPtr device);
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)] internal static extern int rtlsdr_set_tuner_gain_mode(IntPtr device, int manual);
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)] internal static extern int rtlsdr_get_tuner_gains(IntPtr device, [Out] int[]? gains);
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)] internal static extern int rtlsdr_set_tuner_gain(IntPtr device, int gain);
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)] internal static extern int rtlsdr_get_tuner_gain(IntPtr device);
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)] internal static extern int rtlsdr_set_agc_mode(IntPtr device, int enabled);
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)] internal static extern int rtlsdr_reset_buffer(IntPtr device);
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)] internal static extern int rtlsdr_read_async(IntPtr device, ReadCallback callback, IntPtr context, uint bufferCount, uint bufferLength);

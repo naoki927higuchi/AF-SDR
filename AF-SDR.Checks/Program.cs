@@ -13,6 +13,7 @@ internal static class Program
     private static void Main(string[] args)
     {
         VerifyFrequencyInput();
+        VerifyReceiveSettings();
         foreach (int bin in new[] { -1500, -317, 233, 1600 })
         {
             float[] spectrum = new SpectrumProcessor().Process(Tone(bin));
@@ -49,9 +50,12 @@ internal static class Program
         Application.SetCompatibleTextRenderingDefault(false);
         using var form = new MainForm();
         CreateHandles(form);
+        VerifySettingsControls(form);
         VerifyWaterfall();
         var view = (SpectrumView)form.Controls[0].Controls.OfType<SpectrumView>().Single();
         for (int i = 0; i < 330; i++) view.DisplayFrame(new SpectrumProcessor().Process(Tone(100 + i * 2)));
+        VerifyPointer(view);
+        view.RequestedBandwidth = 1_000_000;
         VerifyPointer(view);
         using var bitmap = new Bitmap(form.Width, form.Height);
         form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
@@ -60,7 +64,52 @@ internal static class Program
         using var plotted = new Bitmap(plot.Width, plot.Height);
         plot.DrawToBitmap(plotted, new Rectangle(Point.Empty, plotted.Size));
         if (args.Length > 1) plotted.Save(Path.GetFullPath(args[1]));
-        Console.WriteLine("PASS: SI frequency input, DSP, native DLL exports, WinForms, waterfall ring/clear, cursor mapping and click tuning. No hardware opened.");
+        Console.WriteLine("PASS: receive settings, display bandwidth/cropping, SI frequency input, DSP, native DLL exports, WinForms, waterfall, cursor and click tuning. No hardware opened.");
+    }
+
+    private static void VerifyReceiveSettings()
+    {
+        foreach (uint rate in ReceiveSettings.Rates) new ReceiveSettings(rate).Validate();
+        foreach (uint invalid in new uint[] { 0, 225_000, 300_001, 900_000, 3_200_001 })
+            Require(!ReceiveSettings.ValidRate(invalid), "Reject unsupported sample rate");
+        foreach (uint rate in ReceiveSettings.Rates)
+        {
+            var full = new DisplayRange(rate, 0);
+            Require(full.Bandwidth == rate && full.FirstBin(4096) == 0 && full.BinWidth(4096) == 4096, "Full FFT span");
+            var zoom = new DisplayRange(rate, 100_000);
+            Require(zoom.FrequencyAt(80_000_000, 0) == 79_950_000 && zoom.FrequencyAt(80_000_000, 1) == 80_050_000,
+                "Zoom axis endpoints independent of sample rate");
+            Require(Math.Abs(zoom.FirstBin(4096) + zoom.BinWidth(4096) / 2 - 2048) < 1e-8, "Zoom remains centered");
+            Require(new DisplayRange(rate, rate + 1000).Bandwidth == rate, "Display span limited to acquired bandwidth");
+        }
+    }
+
+    private static void VerifySettingsControls(MainForm form)
+    {
+        ComboBox Field(string name) => (ComboBox)typeof(MainForm).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
+        var rates = Field("sampleRate");
+        var spans = Field("bandwidth");
+        var gain = Field("rfGain");
+        var view = form.Controls[0].Controls.OfType<SpectrumView>().Single();
+        var commit = typeof(ComboBox).GetMethod("OnSelectionChangeCommitted", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        for (int i = 0; i < rates.Items.Count; i++)
+        {
+            rates.SelectedIndex = i;
+            commit.Invoke(rates, [EventArgs.Empty]);
+            uint rate = ((RateOption)rates.SelectedItem!).Hertz;
+            Require(view.SampleRate == rate, "Disconnected rate updates axis preview");
+            Require(spans.Items.Cast<RateOption>().All(o => o.Hertz <= rate), "Dropdown excludes excessive spans");
+        }
+        rates.SelectedIndex = Array.IndexOf(ReceiveSettings.Rates, Receiver.RequestedRate);
+        commit.Invoke(rates, [EventArgs.Empty]);
+        spans.SelectedIndex = spans.Items.Count - 1;
+        Require(view.Range.Bandwidth == 50_000, "Display dropdown changes view span");
+        spans.SelectedIndex = 0;
+        typeof(MainForm).GetMethod("PopulateGains", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(form, [new int[] { 0, 77, 197, 496 }, (int?)77]);
+        Require(gain.Items.Cast<GainOption>().Select(g => g.TenthsDb).SequenceEqual(new[] { 0, 77, 197, 496 }), "Gain choices match device list");
+        Require(((GainOption)gain.SelectedItem!).TenthsDb == 77 && new GainOption(77).ToString().Contains("7.7"), "Gain tenths dB conversion and selection");
+        gain.Items.Clear();
     }
 
     private static void VerifyFrequencyInput()
@@ -93,10 +142,10 @@ internal static class Program
     {
         RectangleF bounds = view.PlotBounds;
         var middle = new Point((int)(bounds.Left + bounds.Width / 2), (int)(bounds.Top + 20));
-        double tolerance = view.SampleRate / bounds.Width;
+        double tolerance = view.Range.Bandwidth / bounds.Width;
         Require(Math.Abs((double)view.FrequencyAt(middle)!.Value - view.CenterFrequency) <= tolerance, "Center cursor frequency");
         var quarter = new Point((int)(bounds.Left + bounds.Width / 4), middle.Y);
-        Require(Math.Abs((double)view.FrequencyAt(quarter)!.Value - (view.CenterFrequency - view.SampleRate / 4)) <= tolerance, "Offset cursor frequency");
+        Require(Math.Abs((double)view.FrequencyAt(quarter)!.Value - (view.CenterFrequency - view.Range.Bandwidth / 4)) <= tolerance, "Offset cursor frequency");
         Require(view.FrequencyAt(Point.Empty) is null, "Ignore axis margins");
         uint? selected = null;
         view.FrequencySelected += hz => selected = hz;
@@ -130,6 +179,12 @@ internal static class Program
         graphics.Clear(Color.Black);
         history.Draw(graphics, new RectangleF(0, 0, bitmap.Width, bitmap.Height));
         Require(history.Count == 0 && bitmap.GetPixel(100, 0).ToArgb() == Color.Black.ToArgb(), "Retune clears history");
+        var bands = Enumerable.Repeat(-100f, SpectrumProcessor.Size).ToArray();
+        Array.Fill(bands, -20f, 1536, 1024);
+        history.Add(bands);
+        history.Draw(graphics, new RectangleF(0, 0, bitmap.Width, bitmap.Height), new DisplayRange(2_048_000, 512_000));
+        Require(bitmap.GetPixel(100, 0).ToArgb() == WaterfallHistory.LevelColor(-20).ToArgb()
+            && bitmap.GetPixel(4000, 0).ToArgb() == WaterfallHistory.LevelColor(-20).ToArgb(), "Waterfall crops same centered FFT band as axis");
     }
 
     private static byte[] Tone(int bin)

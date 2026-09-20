@@ -37,17 +37,19 @@ internal sealed class WaterfallHistory : IDisposable
             (int)(a.G + (b.G - a.G) * part), (int)(a.B + (b.B - a.B) * part));
     }
 
-    internal void Draw(Graphics graphics, RectangleF target)
+    internal void Draw(Graphics graphics, RectangleF target, DisplayRange? range = null)
     {
         if (Count == 0) return;
         int first = Math.Min(Count, Capacity - head);
         float rowHeight = target.Height / Capacity;
+        float sourceX = (float)(range?.FirstBin(bitmap.Width) ?? 0);
+        float sourceWidth = (float)(range?.BinWidth(bitmap.Width) ?? bitmap.Width);
         graphics.DrawImage(bitmap, new RectangleF(target.X, target.Y, target.Width, first * rowHeight),
-            new RectangleF(0, head, bitmap.Width, first), GraphicsUnit.Pixel);
+            new RectangleF(sourceX, head, sourceWidth, first), GraphicsUnit.Pixel);
         int rest = Count - first;
         if (rest > 0)
             graphics.DrawImage(bitmap, new RectangleF(target.X, target.Y + first * rowHeight, target.Width, rest * rowHeight),
-                new RectangleF(0, 0, bitmap.Width, rest), GraphicsUnit.Pixel);
+                new RectangleF(sourceX, 0, sourceWidth, rest), GraphicsUnit.Pixel);
     }
 
     internal void Clear() { Count = 0; head = 0; }

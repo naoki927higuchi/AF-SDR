@@ -20,6 +20,8 @@ internal sealed class Receiver
     private long receivedBytes;
     public uint Frequency { get; private set; }
     public uint SampleRate { get; private set; }
+    public int[] SupportedGains { get; private set; } = [];
+    public int? AppliedGain { get; private set; }
     public float[]? Spectrum => Volatile.Read(ref spectrum);
     public Exception? Failure => Volatile.Read(ref failure);
     public long ReceivedBytes => Interlocked.Read(ref receivedBytes);
@@ -30,8 +32,9 @@ internal sealed class Receiver
         return Enumerable.Range(0, checked((int)count)).Select(i => $"{i}: {Marshal.PtrToStringAnsi(RtlSdrNative.rtlsdr_get_device_name((uint)i))}").ToArray();
     }
 
-    public Task StartAsync(uint index, uint frequency)
+    public Task StartAsync(uint index, uint frequency, ReceiveSettings settings)
     {
+        settings.Validate();
         processing = Task.Run(async () =>
         {
             var dsp = new SpectrumProcessor();
@@ -42,11 +45,11 @@ internal sealed class Receiver
                     Volatile.Write(ref spectrum, dsp.Process(block.AsSpan(offset, SpectrumProcessor.Size * 2)));
             }
         });
-        reading = Task.Run(() => Read(index, frequency));
+        reading = Task.Run(() => Read(index, frequency, settings));
         return ready.Task;
     }
 
-    private void Read(uint index, uint frequency)
+    private void Read(uint index, uint frequency, ReceiveSettings settings)
     {
         RtlSdrNative.ReadCallback callback = (buffer, length, _) =>
         {
@@ -69,8 +72,24 @@ internal sealed class Receiver
         {
             RtlSdrNative.Check(RtlSdrNative.rtlsdr_open(out var opened, index), "接続");
             lock (handleLock) handle = opened;
-            RtlSdrNative.Check(RtlSdrNative.rtlsdr_set_sample_rate(handle, RequestedRate), "サンプルレート設定");
-            RtlSdrNative.Check(RtlSdrNative.rtlsdr_set_tuner_gain_mode(handle, 0), "自動ゲイン設定");
+            RtlSdrNative.Check(RtlSdrNative.rtlsdr_set_sample_rate(handle, settings.SampleRate), "サンプルレート設定");
+            int count = RtlSdrNative.rtlsdr_get_tuner_gains(handle, null);
+            if (count < 0 || count > 1024) throw new IOException("対応RFゲインを取得できません。");
+            if (count > 0)
+            {
+                var gains = new int[count];
+                int returned = RtlSdrNative.rtlsdr_get_tuner_gains(handle, gains);
+                if (returned != count) throw new IOException("対応RFゲインの取得件数が一致しません。");
+                SupportedGains = gains.Distinct().Order().ToArray();
+            }
+            RtlSdrNative.Check(RtlSdrNative.rtlsdr_set_tuner_gain_mode(handle, settings.ManualGain.HasValue ? 1 : 0), "RFゲインモード設定");
+            if (settings.ManualGain is int gain)
+            {
+                if (!SupportedGains.Contains(gain)) throw new IOException("選択したRFゲインはこのデバイスで使用できません。");
+                RtlSdrNative.Check(RtlSdrNative.rtlsdr_set_tuner_gain(handle, gain), "RFゲイン設定");
+                AppliedGain = RtlSdrNative.rtlsdr_get_tuner_gain(handle);
+                if (AppliedGain != gain) throw new IOException("RFゲインの設定値を確認できません。");
+            }
             RtlSdrNative.Check(RtlSdrNative.rtlsdr_set_agc_mode(handle, 0), "ADC AGC設定");
             RtlSdrNative.Check(RtlSdrNative.rtlsdr_set_center_freq(handle, frequency), "中心周波数設定");
             Frequency = RtlSdrNative.rtlsdr_get_center_freq(handle);
