@@ -12,6 +12,7 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        VerifyFrequencyInput();
         foreach (int bin in new[] { -1500, -317, 233, 1600 })
         {
             float[] spectrum = new SpectrumProcessor().Process(Tone(bin));
@@ -59,7 +60,33 @@ internal static class Program
         using var plotted = new Bitmap(plot.Width, plot.Height);
         plot.DrawToBitmap(plotted, new Rectangle(Point.Empty, plotted.Size));
         if (args.Length > 1) plotted.Save(Path.GetFullPath(args[1]));
-        Console.WriteLine("PASS: DSP, native DLL exports, WinForms, waterfall ring/clear, cursor mapping and click tuning. No hardware opened.");
+        Console.WriteLine("PASS: SI frequency input, DSP, native DLL exports, WinForms, waterfall ring/clear, cursor mapping and click tuning. No hardware opened.");
+    }
+
+    private static void VerifyFrequencyInput()
+    {
+        (string Input, uint Expected)[] cases = [
+            ("78.4M", 78_400_000), ("8400k", 8_400_000), ("100M", 100_000_000), ("500k", 500_000),
+            ("8400K", 8_400_000), ("78.4m", 78_400_000), ("78.4 MHz", 78_400_000),
+            (" 500 KHZ ", 500_000), ("1g", 1_000_000_000), ("78400000", 78_400_000),
+            ("78,400,000 Hz", 78_400_000), ("0.000001M", 1), ("4294967295", uint.MaxValue)];
+        foreach (var item in cases)
+        {
+            Require(FrequencyInput.TryParse(item.Input, out uint hz, out _) && hz == item.Expected,
+                "Parse " + item.Input);
+            Require(FrequencyInput.TryParse(FrequencyInput.Format(hz), out uint roundtrip, out _) && roundtrip == hz,
+                "Click/normalized Hz roundtrip");
+        }
+        foreach (string invalid in new[] { "", "M", "0", "-1M", "4294967296", "4.3G", "1.5", "0.0001k",
+                     "78,4M", "1,00", "1e6", "NaN", "100MM", "78.4M garbage", new string('9', 100) })
+            Require(!FrequencyInput.TryParse(invalid, out _, out _), "Reject " + invalid);
+        var oldCulture = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("de-DE");
+            Require(FrequencyInput.TryParse("78.4M", out uint hz, out _) && hz == 78_400_000, "Culture-independent decimal point");
+        }
+        finally { System.Globalization.CultureInfo.CurrentCulture = oldCulture; }
     }
 
     private static void VerifyPointer(SpectrumView view)

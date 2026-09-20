@@ -6,11 +6,12 @@ internal sealed class MainForm : Form
     private readonly Button refresh = new() { Text = "再検索", AutoSize = true };
     private readonly Button connect = new() { Text = "接続", AutoSize = true };
     private readonly Button apply = new() { Text = "周波数を適用", AutoSize = true };
-    private readonly NumericUpDown frequency = new()
+    private readonly TextBox frequency = new()
     {
-        Minimum = 1, Maximum = uint.MaxValue, Value = 80_000_000,
-        Increment = 100_000, ThousandsSeparator = true, Width = 170
+        Text = "80,000,000", Width = 170, MaxLength = 100, Margin = new Padding(3, 3, 22, 3),
+        PlaceholderText = "例: 78.4M / 8400k"
     };
+    private readonly ErrorProvider frequencyError = new() { BlinkStyle = ErrorBlinkStyle.NeverBlink };
     private readonly SpectrumView spectrum = new();
     private readonly Label status = new() { AutoSize = true, Text = "未接続", Margin = new Padding(12, 8, 12, 8) };
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 40 };
@@ -35,20 +36,22 @@ internal sealed class MainForm : Form
         var connectionRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(10) };
         connectionRow.Controls.AddRange([new Label { Text = "RTL-SDR", AutoSize = true, Padding = new Padding(0, 6, 8, 0) }, devices, refresh, connect]);
         var tuningRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(10, 0, 10, 8) };
-        tuningRow.Controls.AddRange([new Label { Text = "中心周波数 (Hz)", AutoSize = true, Padding = new Padding(0, 6, 8, 0) }, frequency, apply,
+        tuningRow.Controls.AddRange([new Label { Text = "中心周波数 (Hz / k / M)", AutoSize = true, Padding = new Padding(0, 6, 8, 0) }, frequency, apply,
             new Label { Text = "帯域 2.048 MHz  /  FFT 4096  /  自動ゲイン", AutoSize = true, Padding = new Padding(12, 6, 0, 0) }]);
         root.Controls.Add(connectionRow, 0, 0);
         root.Controls.Add(tuningRow, 0, 1);
         root.Controls.Add(spectrum, 0, 2);
         root.Controls.Add(status, 0, 3);
         Controls.Add(root);
+        frequencyError.ContainerControl = this;
+        frequency.TextChanged += (_, _) => frequencyError.SetError(frequency, string.Empty);
         refresh.Click += (_, _) => RefreshDevices();
         connect.Click += async (_, _) => await ChangeConnectionAsync(false);
         apply.Click += async (_, _) => await ChangeConnectionAsync(true);
         spectrum.FrequencySelected += async hz =>
         {
             if (busy || closing || receiver is null) return;
-            frequency.Value = hz;
+            frequency.Text = FrequencyInput.Format(hz);
             await ChangeConnectionAsync(true);
         };
         frequency.KeyDown += async (_, e) =>
@@ -62,7 +65,7 @@ internal sealed class MainForm : Form
         timer.Tick += async (_, _) => await UpdateDisplayAsync();
         Shown += (_, _) => { RefreshDevices(); timer.Start(); };
         FormClosing += OnClosing;
-        FormClosed += (_, _) => timer.Dispose();
+        FormClosed += (_, _) => { timer.Dispose(); frequencyError.Dispose(); };
         SetControls();
     }
 
@@ -82,19 +85,29 @@ internal sealed class MainForm : Form
     private async Task ChangeConnectionAsync(bool retune)
     {
         if (busy || closing) return;
+        bool start = receiver is null || retune;
+        uint requestedHz = 0;
+        // Validate before stopping reception: invalid text must not interrupt the signal/history.
+        if (start && !FrequencyInput.TryParse(frequency.Text, out requestedHz, out string error))
+        {
+            frequencyError.SetError(frequency, error);
+            status.Text = error;
+            frequency.Focus();
+            return;
+        }
+        frequencyError.SetError(frequency, string.Empty);
         busy = true;
         SetControls();
         try
         {
-            bool start = receiver is null || retune;
             status.Text = retune ? "中心周波数を変更しています…" : start ? "接続しています…" : "切断しています…";
             await StopReceiverAsync();
             if (start && !closing)
             {
                 // A full stop/reopen prevents old-frequency samples appearing on the new axis.
-                frequency.Validate();
                 receiver = new Receiver();
-                await receiver.StartAsync((uint)devices.SelectedIndex, (uint)frequency.Value);
+                await receiver.StartAsync((uint)devices.SelectedIndex, requestedHz);
+                frequency.Text = FrequencyInput.Format(receiver.Frequency);
                 spectrum.CenterFrequency = receiver.Frequency;
                 spectrum.SampleRate = receiver.SampleRate;
                 lastBytes = 0;
