@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using AfSdr.Dsp;
 using AfSdr.Native;
+using AfSdr.Audio;
 
 namespace AfSdr;
 
@@ -13,6 +14,23 @@ internal sealed class Receiver
     private readonly Channel<byte[]> blocks = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(2)
     { SingleReader = true, SingleWriter = true, FullMode = BoundedChannelFullMode.DropOldest });
     private readonly TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly Channel<AudioBlock> audioBlocks = Channel.CreateBounded<AudioBlock>(new BoundedChannelOptions(4)
+    { SingleReader = true, SingleWriter = true, FullMode = BoundedChannelFullMode.DropOldest });
+    private readonly record struct AudioBlock(long StartByte, byte[] Data);
+    private Task audioProcessing = Task.CompletedTask;
+    private WaveAudioOutput? audioOutput;
+    private Exception? audioFailure;
+    private float volume = 0.3f;
+    public Exception? AudioFailure => Volatile.Read(ref audioFailure);
+    public float Volume
+    {
+        set
+        {
+            Volatile.Write(ref volume, value);
+            var output = Volatile.Read(ref audioOutput);
+            if (output is not null) output.Volume = value;
+        }
+    }
     private IntPtr handle;
     private Task reading = Task.CompletedTask, processing = Task.CompletedTask;
     private float[]? spectrum;
@@ -35,6 +53,7 @@ internal sealed class Receiver
     public Task StartAsync(uint index, uint frequency, ReceiveSettings settings)
     {
         settings.Validate();
+        if (settings.FmEnabled) audioProcessing = Task.Run(ProcessAudioAsync);
         processing = Task.Run(async () =>
         {
             var dsp = new SpectrumProcessor(settings.FftSize);
@@ -49,6 +68,40 @@ internal sealed class Receiver
         return ready.Task;
     }
 
+    private async Task ProcessAudioAsync()
+    {
+        WaveAudioOutput? output = null;
+        try
+        {
+            await ready.Task;
+            stop.Token.ThrowIfCancellationRequested();
+            var demodulator = new FmDemodulator(SampleRate);
+            output = new WaveAudioOutput(Volatile.Read(ref volume));
+            Volatile.Write(ref audioOutput, output);
+            await output.Ready;
+            long expected = 0;
+            await foreach (var block in audioBlocks.Reader.ReadAllAsync(stop.Token))
+            {
+                if (output.Failure is { } error) throw error;
+                if (block.StartByte != expected)
+                {
+                    // Never differentiate phase across missing I/Q; discard old audio and fade in.
+                    demodulator = new FmDemodulator(SampleRate);
+                    output.Clear();
+                }
+                expected = block.StartByte + block.Data.Length;
+                output.Write(demodulator.Process(block.Data));
+            }
+        }
+        catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
+        catch (Exception ex) { Volatile.Write(ref audioFailure, ex); }
+        finally
+        {
+            Volatile.Write(ref audioOutput, null);
+            output?.Dispose();
+        }
+    }
+
     private void Read(uint index, uint frequency, ReceiveSettings settings)
     {
         RtlSdrNative.ReadCallback callback = (buffer, length, _) =>
@@ -59,8 +112,9 @@ internal sealed class Receiver
                 if (stop.IsCancellationRequested) return;
                 var copy = new byte[checked((int)length)];
                 Marshal.Copy(buffer, copy, 0, copy.Length);
-                Interlocked.Add(ref receivedBytes, copy.Length);
+                long endByte = Interlocked.Add(ref receivedBytes, copy.Length);
                 blocks.Writer.TryWrite(copy);
+                if (settings.FmEnabled && AudioFailure is null) audioBlocks.Writer.TryWrite(new AudioBlock(endByte - copy.Length, copy));
             }
             catch (Exception ex)
             {
@@ -113,6 +167,7 @@ internal sealed class Receiver
                 if (handle != IntPtr.Zero) { RtlSdrNative.rtlsdr_close(handle); handle = IntPtr.Zero; }
             }
             blocks.Writer.TryComplete();
+            audioBlocks.Writer.TryComplete();
             GC.KeepAlive(callback);
         }
     }
@@ -120,6 +175,7 @@ internal sealed class Receiver
     public async Task StopAsync()
     {
         stop.Cancel();
+        Volume = 0;
         // Retry covers cancellation arriving just before native read_async enters RUNNING.
         while (!reading.IsCompleted)
         {
@@ -129,5 +185,6 @@ internal sealed class Receiver
         }
         await reading;
         await processing;
+        await audioProcessing;
     }
 }

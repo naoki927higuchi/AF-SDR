@@ -1,6 +1,6 @@
 namespace AfSdr;
 
-internal sealed record ReceiveSettings(uint SampleRate, int? ManualGain = null, int FftSize = Dsp.SpectrumProcessor.DefaultSize)
+internal sealed record ReceiveSettings(uint SampleRate, int? ManualGain = null, int FftSize = Dsp.SpectrumProcessor.DefaultSize, bool FmEnabled = false)
 {
     // RTL-SDR Blog 1.4.0 rtl-sdr.h: 225001..300000 or 900001..3200000.
     internal static readonly uint[] Rates = [250_000, 300_000, 1_000_000, 1_024_000, 1_400_000,

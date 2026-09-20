@@ -12,6 +12,12 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        FmChecks.Run();
+        if (args.Contains("--audio-smoke"))
+        {
+            FmChecks.SilentOutputSmoke();
+            args = args.Where(a => a != "--audio-smoke").ToArray();
+        }
         VerifyFrequencyInput();
         VerifyFftSizes();
         VerifyReceiveSettings();
@@ -65,7 +71,7 @@ internal static class Program
         using var plotted = new Bitmap(plot.Width, plot.Height);
         plot.DrawToBitmap(plotted, new Rectangle(Point.Empty, plotted.Size));
         if (args.Length > 1) plotted.Save(Path.GetFullPath(args[1]));
-        Console.WriteLine("PASS: receive settings, display bandwidth/cropping, SI frequency input, DSP, native DLL exports, WinForms, waterfall, cursor and click tuning. No hardware opened.");
+        Console.WriteLine("PASS: FM demodulation/audio buffer, receive settings, display bandwidth/cropping, SI input, FFT, native DLL exports, WinForms, waterfall and click tuning. No RTL-SDR hardware opened.");
     }
 
     private static void VerifyReceiveSettings()
@@ -154,6 +160,11 @@ internal static class Program
         view.CanTune = true;
         click.Invoke(view, [new MouseEventArgs(MouseButtons.Left, 1, quarter.X, quarter.Y, 0)]);
         Require(selected == view.FrequencyAt(quarter), "Left click requests cursor frequency");
+        var waterfallPoint = new Point(quarter.X, (int)(view.WaterfallBounds.Top + 10));
+        Require(view.FrequencyAt(waterfallPoint) == view.FrequencyAt(quarter), "Waterfall and spectrum tuning match");
+        selected = null;
+        click.Invoke(view, [new MouseEventArgs(MouseButtons.Left, 1, waterfallPoint.X, waterfallPoint.Y, 0)]);
+        Require(selected == view.FrequencyAt(quarter), "Waterfall left click tunes station");
         selected = null;
         click.Invoke(view, [new MouseEventArgs(MouseButtons.Right, 1, middle.X, middle.Y, 0)]);
         Require(selected is null, "Right click ignored");

@@ -7,6 +7,10 @@ internal sealed class MainForm : Form
     private readonly Button connect = new() { Text = "接続", AutoSize = true };
     private readonly Button apply = new() { Text = "周波数を適用", AutoSize = true };
     private readonly ComboBox fftSize = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 110 };
+    private readonly CheckBox fmEnabled = new() { Text = "FM音声（モノラル）", AutoSize = true, Padding = new Padding(12, 5, 0, 0) };
+    private readonly TrackBar volume = new() { Minimum = 0, Maximum = 100, Value = 30, TickFrequency = 10, Width = 145, Height = 35 };
+    private readonly Label volumeLabel = new() { Text = "音量 30%", AutoSize = true, Padding = new Padding(0, 6, 0, 0) };
+    private readonly Label audioStatus = new() { AutoSize = true, Text = "FM OFF", Padding = new Padding(8, 6, 0, 0) };
     private readonly ComboBox sampleRate = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 175, DropDownWidth = 270 };
     private readonly ComboBox gainMode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 85 };
     private readonly ComboBox rfGain = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 110 };
@@ -42,6 +46,7 @@ internal sealed class MainForm : Form
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         var connectionRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(10) };
         connectionRow.Controls.AddRange([new Label { Text = "RTL-SDR", AutoSize = true, Padding = new Padding(0, 6, 8, 0) }, devices, refresh, connect]);
+        connectionRow.Controls.AddRange([fmEnabled, volumeLabel, volume, audioStatus]);
         var tuningRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(10, 0, 10, 8) };
         tuningRow.Controls.AddRange([new Label { Text = "中心周波数 (Hz / k / M)", AutoSize = true, Padding = new Padding(0, 6, 8, 0) }, frequency, apply,
             new Label { Text = "FFTポイント数", AutoSize = true, Padding = new Padding(12, 6, 0, 0) }, fftSize]);
@@ -68,6 +73,12 @@ internal sealed class MainForm : Form
         refresh.Click += (_, _) => RefreshDevices();
         connect.Click += async (_, _) => await ChangeConnectionAsync(false);
         apply.Click += async (_, _) => await ChangeConnectionAsync(true);
+        fmEnabled.CheckedChanged += async (_, _) => await ApplyReceiverSettingsAsync();
+        volume.ValueChanged += (_, _) =>
+        {
+            volumeLabel.Text = $"音量 {volume.Value}%";
+            if (receiver is not null) receiver.Volume = volume.Value / 100f;
+        };
         sampleRate.SelectionChangeCommitted += async (_, _) => await ApplyReceiverSettingsAsync();
         fftSize.SelectionChangeCommitted += async (_, _) => await ApplyReceiverSettingsAsync();
         gainMode.SelectionChangeCommitted += async (_, _) => await ApplyReceiverSettingsAsync();
@@ -177,7 +188,7 @@ internal sealed class MainForm : Form
         }
         frequencyError.SetError(frequency, string.Empty);
         var settings = new ReceiveSettings(((RateOption)sampleRate.SelectedItem!).Hertz,
-            gainMode.SelectedIndex == 1 ? (rfGain.SelectedItem as GainOption)?.TenthsDb : null, (int)fftSize.SelectedItem!);
+            gainMode.SelectedIndex == 1 ? (rfGain.SelectedItem as GainOption)?.TenthsDb : null, (int)fftSize.SelectedItem!, fmEnabled.Checked);
         busy = true;
         SetControls();
         try
@@ -187,7 +198,7 @@ internal sealed class MainForm : Form
             if (start && !closing)
             {
                 // A full stop/reopen prevents old-frequency samples appearing on the new axis.
-                receiver = new Receiver();
+                receiver = new Receiver { Volume = volume.Value / 100f };
                 await receiver.StartAsync((uint)devices.SelectedIndex, requestedHz, settings);
                 frequency.Text = FrequencyInput.Format(receiver.Frequency);
                 spectrum.CenterFrequency = receiver.Frequency;
@@ -227,6 +238,8 @@ internal sealed class MainForm : Form
         long bytes = receiver.ReceivedBytes;
         if (bytes != lastBytes) { lastBytes = bytes; lastData = DateTime.UtcNow; }
         spectrum.DisplayFrame(receiver.Spectrum);
+        audioStatus.Text = receiver.AudioFailure is { } audioError ? $"FM音声エラー: {audioError.Message}"
+            : fmEnabled.Checked ? "FM ON / 48 kHz" : "FM OFF";
         status.Text = (DateTime.UtcNow - lastData).TotalSeconds > 3
             ? "受信データが届いていません。切断・再接続してください。"
             : $"受信中  |  {receiver.Frequency / 1e6:F6} MHz  |  {receiver.SampleRate / 1e6:F6} MS/s  |  RFゲイン "
@@ -246,6 +259,9 @@ internal sealed class MainForm : Form
         gainMode.Enabled = enabled && receiver is not null && rfGain.Items.Count > 0;
         rfGain.Enabled = gainMode.Enabled && gainMode.SelectedIndex == 1;
         spectrum.CanTune = enabled && receiver is not null;
+        fmEnabled.Enabled = enabled;
+        volume.Enabled = !closing;
+        if (receiver is null) audioStatus.Text = fmEnabled.Checked ? "FM ON（接続待ち）" : "FM OFF";
     }
 
     private void ShowError(Exception ex)

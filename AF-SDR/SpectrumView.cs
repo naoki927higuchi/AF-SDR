@@ -44,9 +44,20 @@ internal sealed class SpectrumView : Control
     internal uint? FrequencyAt(Point point)
     {
         RectangleF plot = PlotBounds;
-        if (plot.Width <= 0 || !plot.Contains(point)) return null;
+        if (plot.Width <= 0 || (!plot.Contains(point) && !WaterfallBounds.Contains(point))) return null;
         double hz = Range.FrequencyAt(CenterFrequency, (point.X - plot.Left) / plot.Width);
         return hz >= 1 && hz <= uint.MaxValue ? (uint)Math.Round(hz) : null;
+    }
+
+    internal RectangleF WaterfallBounds
+    {
+        get
+        {
+            float scale = DeviceDpi / 96f;
+            var plot = PlotBounds;
+            return new RectangleF(plot.Left, plot.Bottom + 76 * scale, plot.Width,
+                Math.Max(1, Height - plot.Bottom - 88 * scale));
+        }
     }
 
     internal void DisplayFrame(float[]? frame)
@@ -110,7 +121,7 @@ internal sealed class SpectrumView : Control
         g.DrawString("レベル (dBFS / FFT bin)", Font, ink, plot.Left, 10 * scale);
         string cursorText = pointer is Point position && FrequencyAt(position) is uint hz
             ? $"カーソル: {hz:N0} Hz  ({hz / 1e6:F6} MHz)  |  左クリックで中心に設定"
-            : "スペクトラム上で周波数を確認 / 左クリックで中心周波数を変更";
+            : "スペクトラム／ウォーターフォールを左クリックで選局";
         g.DrawString(cursorText, Font, ink, plot.Left, 32 * scale);
         for (int db = -120; db <= 0; db += 20)
         {
@@ -126,8 +137,7 @@ internal sealed class SpectrumView : Control
             g.DrawString(mhz.ToString("F3"), Font, ink, x, plot.Bottom + 9 * scale, centered);
         }
         g.DrawString("周波数 (MHz)", Font, ink, plot.Left + plot.Width / 2, plot.Bottom + 29 * scale, centered);
-        var water = new RectangleF(plot.Left, plot.Bottom + 76 * scale, plot.Width,
-            Math.Max(1, Height - plot.Bottom - 88 * scale));
+        var water = WaterfallBounds;
         g.DrawString("ウォーターフォール  ↓ 時間（最新が上）    弱 −110 → −10 dBFS 強", Font, ink,
             plot.Left, plot.Bottom + 53 * scale);
         g.InterpolationMode = InterpolationMode.NearestNeighbor;
