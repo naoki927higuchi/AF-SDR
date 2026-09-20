@@ -48,6 +48,10 @@ internal static class Program
         Application.SetCompatibleTextRenderingDefault(false);
         using var form = new MainForm();
         CreateHandles(form);
+        VerifyWaterfall();
+        var view = (SpectrumView)form.Controls[0].Controls.OfType<SpectrumView>().Single();
+        for (int i = 0; i < 330; i++) view.DisplayFrame(new SpectrumProcessor().Process(Tone(100 + i * 2)));
+        VerifyPointer(view);
         using var bitmap = new Bitmap(form.Width, form.Height);
         form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
         if (args.Length > 0) bitmap.Save(Path.GetFullPath(args[0]));
@@ -55,7 +59,50 @@ internal static class Program
         using var plotted = new Bitmap(plot.Width, plot.Height);
         plot.DrawToBitmap(plotted, new Rectangle(Point.Empty, plotted.Size));
         if (args.Length > 1) plotted.Save(Path.GetFullPath(args[1]));
-        Console.WriteLine("PASS: DSP, native DLL exports, WinForms and spectrum rendering. No hardware opened.");
+        Console.WriteLine("PASS: DSP, native DLL exports, WinForms, waterfall ring/clear, cursor mapping and click tuning. No hardware opened.");
+    }
+
+    private static void VerifyPointer(SpectrumView view)
+    {
+        RectangleF bounds = view.PlotBounds;
+        var middle = new Point((int)(bounds.Left + bounds.Width / 2), (int)(bounds.Top + 20));
+        double tolerance = view.SampleRate / bounds.Width;
+        Require(Math.Abs((double)view.FrequencyAt(middle)!.Value - view.CenterFrequency) <= tolerance, "Center cursor frequency");
+        var quarter = new Point((int)(bounds.Left + bounds.Width / 4), middle.Y);
+        Require(Math.Abs((double)view.FrequencyAt(quarter)!.Value - (view.CenterFrequency - view.SampleRate / 4)) <= tolerance, "Offset cursor frequency");
+        Require(view.FrequencyAt(Point.Empty) is null, "Ignore axis margins");
+        uint? selected = null;
+        view.FrequencySelected += hz => selected = hz;
+        MethodInfo click = typeof(SpectrumView).GetMethod("OnMouseClick", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        view.CanTune = true;
+        click.Invoke(view, [new MouseEventArgs(MouseButtons.Left, 1, quarter.X, quarter.Y, 0)]);
+        Require(selected == view.FrequencyAt(quarter), "Left click requests cursor frequency");
+        selected = null;
+        click.Invoke(view, [new MouseEventArgs(MouseButtons.Right, 1, middle.X, middle.Y, 0)]);
+        Require(selected is null, "Right click ignored");
+        view.CanTune = false;
+        click.Invoke(view, [new MouseEventArgs(MouseButtons.Left, 1, middle.X, middle.Y, 0)]);
+        Require(selected is null, "Busy/disconnected click ignored");
+        typeof(SpectrumView).GetMethod("OnMouseMove", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(view, [new MouseEventArgs(MouseButtons.None, 0, quarter.X, quarter.Y, 0)]);
+    }
+
+    private static void VerifyWaterfall()
+    {
+        using var history = new WaterfallHistory();
+        for (int i = 0; i < WaterfallHistory.Capacity + 5; i++)
+            history.Add(Enumerable.Repeat(-100f, SpectrumProcessor.Size).ToArray());
+        history.Add(Enumerable.Repeat(-20f, SpectrumProcessor.Size).ToArray());
+        Require(history.Count == WaterfallHistory.Capacity, "Waterfall history bounded");
+        using var bitmap = new Bitmap(SpectrumProcessor.Size, WaterfallHistory.Capacity);
+        using var graphics = Graphics.FromImage(bitmap);
+        history.Draw(graphics, new RectangleF(0, 0, bitmap.Width, bitmap.Height));
+        Require(bitmap.GetPixel(100, 0).ToArgb() == WaterfallHistory.LevelColor(-20).ToArgb(), "Newest row at top after ring wrap");
+        Require(bitmap.GetPixel(100, 1).ToArgb() == WaterfallHistory.LevelColor(-100).ToArgb(), "Older row below newest");
+        history.Clear();
+        graphics.Clear(Color.Black);
+        history.Draw(graphics, new RectangleF(0, 0, bitmap.Width, bitmap.Height));
+        Require(history.Count == 0 && bitmap.GetPixel(100, 0).ToArgb() == Color.Black.ToArgb(), "Retune clears history");
     }
 
     private static byte[] Tone(int bin)

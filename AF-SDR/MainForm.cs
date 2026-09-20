@@ -22,8 +22,8 @@ internal sealed class MainForm : Form
     public MainForm()
     {
         Text = "AF-SDR";
-        ClientSize = new Size(1120, 650);
-        MinimumSize = new Size(820, 460);
+        ClientSize = new Size(1120, 820);
+        MinimumSize = new Size(820, 640);
         StartPosition = FormStartPosition.CenterScreen;
         Font = new Font("Yu Gothic UI", 10);
         AutoScaleMode = AutoScaleMode.Dpi;
@@ -45,6 +45,12 @@ internal sealed class MainForm : Form
         refresh.Click += (_, _) => RefreshDevices();
         connect.Click += async (_, _) => await ChangeConnectionAsync(false);
         apply.Click += async (_, _) => await ChangeConnectionAsync(true);
+        spectrum.FrequencySelected += async hz =>
+        {
+            if (busy || closing || receiver is null) return;
+            frequency.Value = hz;
+            await ChangeConnectionAsync(true);
+        };
         frequency.KeyDown += async (_, e) =>
         {
             if (e.KeyCode == Keys.Enter && apply.Enabled)
@@ -108,8 +114,7 @@ internal sealed class MainForm : Form
             await receiver.StopAsync();
             receiver = null;
         }
-        spectrum.Values = null;
-        spectrum.Invalidate();
+        spectrum.Clear();
     }
 
     private async Task UpdateDisplayAsync()
@@ -124,8 +129,7 @@ internal sealed class MainForm : Form
         }
         long bytes = receiver.ReceivedBytes;
         if (bytes != lastBytes) { lastBytes = bytes; lastData = DateTime.UtcNow; }
-        spectrum.Values = receiver.Spectrum;
-        spectrum.Invalidate();
+        spectrum.DisplayFrame(receiver.Spectrum);
         status.Text = (DateTime.UtcNow - lastData).TotalSeconds > 3
             ? "受信データが届いていません。切断・再接続してください。"
             : $"受信中  |  {receiver.Frequency / 1e6:F6} MHz  |  {receiver.SampleRate / 1e6:F3} MS/s  |  受信量 {bytes / 1048576.0:F1} MiB";
@@ -139,6 +143,7 @@ internal sealed class MainForm : Form
         refresh.Enabled = devices.Enabled = enabled && receiver is null;
         apply.Enabled = enabled && receiver is not null;
         frequency.Enabled = enabled;
+        spectrum.CanTune = enabled && receiver is not null;
     }
 
     private void ShowError(Exception ex)
