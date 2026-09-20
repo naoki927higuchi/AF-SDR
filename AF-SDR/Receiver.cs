@@ -37,12 +37,12 @@ internal sealed class Receiver
         settings.Validate();
         processing = Task.Run(async () =>
         {
-            var dsp = new SpectrumProcessor();
+            var dsp = new SpectrumProcessor(settings.FftSize);
             await foreach (byte[] block in blocks.Reader.ReadAllAsync())
             {
                 // Analyze all complete FFT blocks; bounded channel prevents latency buildup.
-                for (int offset = 0; offset + SpectrumProcessor.Size * 2 <= block.Length; offset += SpectrumProcessor.Size * 2)
-                    Volatile.Write(ref spectrum, dsp.Process(block.AsSpan(offset, SpectrumProcessor.Size * 2)));
+                for (int offset = 0; offset + dsp.Size * 2 <= block.Length; offset += dsp.Size * 2)
+                    Volatile.Write(ref spectrum, dsp.Process(block.AsSpan(offset, dsp.Size * 2)));
             }
         });
         reading = Task.Run(() => Read(index, frequency, settings));

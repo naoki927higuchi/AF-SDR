@@ -6,6 +6,7 @@ internal sealed class MainForm : Form
     private readonly Button refresh = new() { Text = "再検索", AutoSize = true };
     private readonly Button connect = new() { Text = "接続", AutoSize = true };
     private readonly Button apply = new() { Text = "周波数を適用", AutoSize = true };
+    private readonly ComboBox fftSize = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 110 };
     private readonly ComboBox sampleRate = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 175, DropDownWidth = 270 };
     private readonly ComboBox gainMode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 85 };
     private readonly ComboBox rfGain = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 110 };
@@ -43,7 +44,9 @@ internal sealed class MainForm : Form
         connectionRow.Controls.AddRange([new Label { Text = "RTL-SDR", AutoSize = true, Padding = new Padding(0, 6, 8, 0) }, devices, refresh, connect]);
         var tuningRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(10, 0, 10, 8) };
         tuningRow.Controls.AddRange([new Label { Text = "中心周波数 (Hz / k / M)", AutoSize = true, Padding = new Padding(0, 6, 8, 0) }, frequency, apply,
-            new Label { Text = "FFT 4096", AutoSize = true, Padding = new Padding(12, 6, 0, 0) }]);
+            new Label { Text = "FFTポイント数", AutoSize = true, Padding = new Padding(12, 6, 0, 0) }, fftSize]);
+        foreach (int size in Dsp.SpectrumProcessor.SupportedSizes) fftSize.Items.Add(size);
+        fftSize.SelectedItem = Dsp.SpectrumProcessor.DefaultSize;
         var settingsRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(10, 0, 10, 8) };
         Label SettingLabel(string text) => new() { Text = text, AutoSize = true, Padding = new Padding(0, 6, 4, 0) };
         settingsRow.Controls.AddRange([SettingLabel("サンプルレート"), sampleRate, SettingLabel("RFゲイン"), gainMode, rfGain,
@@ -66,6 +69,7 @@ internal sealed class MainForm : Form
         connect.Click += async (_, _) => await ChangeConnectionAsync(false);
         apply.Click += async (_, _) => await ChangeConnectionAsync(true);
         sampleRate.SelectionChangeCommitted += async (_, _) => await ApplyReceiverSettingsAsync();
+        fftSize.SelectionChangeCommitted += async (_, _) => await ApplyReceiverSettingsAsync();
         gainMode.SelectionChangeCommitted += async (_, _) => await ApplyReceiverSettingsAsync();
         rfGain.SelectionChangeCommitted += async (_, _) => await ApplyReceiverSettingsAsync();
         bandwidth.SelectedIndexChanged += (_, _) =>
@@ -173,7 +177,7 @@ internal sealed class MainForm : Form
         }
         frequencyError.SetError(frequency, string.Empty);
         var settings = new ReceiveSettings(((RateOption)sampleRate.SelectedItem!).Hertz,
-            gainMode.SelectedIndex == 1 ? (rfGain.SelectedItem as GainOption)?.TenthsDb : null);
+            gainMode.SelectedIndex == 1 ? (rfGain.SelectedItem as GainOption)?.TenthsDb : null, (int)fftSize.SelectedItem!);
         busy = true;
         SetControls();
         try
@@ -238,7 +242,7 @@ internal sealed class MainForm : Form
         refresh.Enabled = devices.Enabled = enabled && receiver is null;
         apply.Enabled = enabled && receiver is not null;
         frequency.Enabled = enabled;
-        sampleRate.Enabled = bandwidth.Enabled = enabled;
+        sampleRate.Enabled = bandwidth.Enabled = fftSize.Enabled = enabled;
         gainMode.Enabled = enabled && receiver is not null && rfGain.Items.Count > 0;
         rfGain.Enabled = gainMode.Enabled && gainMode.SelectedIndex == 1;
         spectrum.CanTune = enabled && receiver is not null;

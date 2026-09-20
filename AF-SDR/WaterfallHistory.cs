@@ -11,14 +11,22 @@ internal sealed class WaterfallHistory : IDisposable
         Color.FromArgb(0, 146, 190), Color.FromArgb(69, 215, 140),
         Color.FromArgb(255, 217, 66), Color.FromArgb(255, 80, 38)];
     internal const int Capacity = 300;
-    private readonly Bitmap bitmap = new(SpectrumProcessor.Size, Capacity, PixelFormat.Format32bppArgb);
-    private readonly int[] row = new int[SpectrumProcessor.Size];
+    private Bitmap bitmap = new(SpectrumProcessor.DefaultSize, Capacity, PixelFormat.Format32bppArgb);
+    private int[] row = new int[SpectrumProcessor.DefaultSize];
     private int head;
     internal int Count { get; private set; }
 
     internal void Add(float[] values)
     {
-        if (values.Length != row.Length) throw new ArgumentException("Unexpected FFT size.");
+        if (values.Length != row.Length)
+        {
+            if (!SpectrumProcessor.SupportedSizes.Contains(values.Length)) throw new ArgumentException("Unexpected FFT size.");
+            var replacement = new Bitmap(values.Length, Capacity, PixelFormat.Format32bppArgb);
+            bitmap.Dispose();
+            bitmap = replacement;
+            row = new int[values.Length];
+            Clear();
+        }
         head = (head + Capacity - 1) % Capacity;
         for (int i = 0; i < row.Length; i++) row[i] = LevelColor(values[i]).ToArgb();
         var data = bitmap.LockBits(new Rectangle(0, head, row.Length, 1), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);

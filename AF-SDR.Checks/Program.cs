@@ -13,22 +13,23 @@ internal static class Program
     private static void Main(string[] args)
     {
         VerifyFrequencyInput();
+        VerifyFftSizes();
         VerifyReceiveSettings();
         foreach (int bin in new[] { -1500, -317, 233, 1600 })
         {
             float[] spectrum = new SpectrumProcessor().Process(Tone(bin));
             int peak = Array.IndexOf(spectrum, spectrum.Max());
-            Require(peak == SpectrumProcessor.Size / 2 + bin, $"FFT frequency sign / shift: {bin}");
+            Require(peak == SpectrumProcessor.DefaultSize / 2 + bin, $"FFT frequency sign / shift: {bin}");
             Require(Math.Abs(spectrum[peak] - 20 * Math.Log10(0.5)) < 0.15, "Tone level ~ -6.02 dBFS");
             Require(spectrum[(peak + 100) % spectrum.Length] < -65, "Hann off-tone rejection");
         }
-        byte[] dc = Enumerable.Repeat((byte)170, SpectrumProcessor.Size * 2).ToArray();
+        byte[] dc = Enumerable.Repeat((byte)170, SpectrumProcessor.DefaultSize * 2).ToArray();
         Require(new SpectrumProcessor().Process(dc).All(v => float.IsFinite(v) && v <= -120), "DC removal / finite silence");
         var changing = new SpectrumProcessor();
         changing.Process(Tone(200));
         float[] next = [];
         for (int i = 0; i < 40; i++) next = changing.Process(Tone(-500));
-        Require(Array.IndexOf(next, next.Max()) == SpectrumProcessor.Size / 2 - 500, "Spectrum follows changing input");
+        Require(Array.IndexOf(next, next.Max()) == SpectrumProcessor.DefaultSize / 2 - 500, "Spectrum follows changing input");
         var clock = Stopwatch.StartNew();
         var dsp = new SpectrumProcessor();
         byte[] tone = Tone(300);
@@ -167,10 +168,10 @@ internal static class Program
     {
         using var history = new WaterfallHistory();
         for (int i = 0; i < WaterfallHistory.Capacity + 5; i++)
-            history.Add(Enumerable.Repeat(-100f, SpectrumProcessor.Size).ToArray());
-        history.Add(Enumerable.Repeat(-20f, SpectrumProcessor.Size).ToArray());
+            history.Add(Enumerable.Repeat(-100f, SpectrumProcessor.DefaultSize).ToArray());
+        history.Add(Enumerable.Repeat(-20f, SpectrumProcessor.DefaultSize).ToArray());
         Require(history.Count == WaterfallHistory.Capacity, "Waterfall history bounded");
-        using var bitmap = new Bitmap(SpectrumProcessor.Size, WaterfallHistory.Capacity);
+        using var bitmap = new Bitmap(SpectrumProcessor.DefaultSize, WaterfallHistory.Capacity);
         using var graphics = Graphics.FromImage(bitmap);
         history.Draw(graphics, new RectangleF(0, 0, bitmap.Width, bitmap.Height));
         Require(bitmap.GetPixel(100, 0).ToArgb() == WaterfallHistory.LevelColor(-20).ToArgb(), "Newest row at top after ring wrap");
@@ -179,7 +180,7 @@ internal static class Program
         graphics.Clear(Color.Black);
         history.Draw(graphics, new RectangleF(0, 0, bitmap.Width, bitmap.Height));
         Require(history.Count == 0 && bitmap.GetPixel(100, 0).ToArgb() == Color.Black.ToArgb(), "Retune clears history");
-        var bands = Enumerable.Repeat(-100f, SpectrumProcessor.Size).ToArray();
+        var bands = Enumerable.Repeat(-100f, SpectrumProcessor.DefaultSize).ToArray();
         Array.Fill(bands, -20f, 1536, 1024);
         history.Add(bands);
         history.Draw(graphics, new RectangleF(0, 0, bitmap.Width, bitmap.Height), new DisplayRange(2_048_000, 512_000));
@@ -187,12 +188,36 @@ internal static class Program
             && bitmap.GetPixel(4000, 0).ToArgb() == WaterfallHistory.LevelColor(-20).ToArgb(), "Waterfall crops same centered FFT band as axis");
     }
 
-    private static byte[] Tone(int bin)
+    private static void VerifyFftSizes()
     {
-        var iq = new byte[SpectrumProcessor.Size * 2];
-        for (int i = 0; i < SpectrumProcessor.Size; i++)
+        using var history = new WaterfallHistory();
+        foreach (int size in SpectrumProcessor.SupportedSizes.Concat(SpectrumProcessor.SupportedSizes.Reverse()))
         {
-            double phase = 2 * Math.PI * bin * i / SpectrumProcessor.Size;
+            new ReceiveSettings(2_048_000, null, size).Validate();
+            foreach (int bin in new[] { -233, 317 })
+            {
+                float[] result = new SpectrumProcessor(size).Process(Tone(bin, size));
+                Require(result.Length == size && Array.IndexOf(result, result.Max()) == size / 2 + bin, "Variable FFT sign/size");
+                Require(Math.Abs(result.Max() - 20 * Math.Log10(0.5)) < 0.15, "Variable FFT amplitude normalization");
+            }
+            history.Add(Enumerable.Repeat(-20f, size).ToArray());
+            Require(history.Count <= 2, "FFT resize resets waterfall history");
+            using var bitmap = new Bitmap(640, 300);
+            using var graphics = Graphics.FromImage(bitmap);
+            history.Draw(graphics, new RectangleF(0, 0, 640, 300), new DisplayRange(2_048_000, 500_000));
+            Require(bitmap.GetPixel(320, 0).ToArgb() == WaterfallHistory.LevelColor(-20).ToArgb(), "Resized waterfall rendering");
+        }
+        bool rejected = false;
+        try { _ = new SpectrumProcessor(3000); } catch (ArgumentOutOfRangeException) { rejected = true; }
+        Require(rejected, "Invalid FFT size rejected");
+    }
+
+    private static byte[] Tone(int bin, int size = SpectrumProcessor.DefaultSize)
+    {
+        var iq = new byte[size * 2];
+        for (int i = 0; i < size; i++)
+        {
+            double phase = 2 * Math.PI * bin * i / size;
             iq[2 * i] = (byte)Math.Round(127.5 + 64 * Math.Cos(phase));
             iq[2 * i + 1] = (byte)Math.Round(127.5 + 64 * Math.Sin(phase));
         }

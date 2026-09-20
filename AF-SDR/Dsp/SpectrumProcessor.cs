@@ -4,15 +4,22 @@ namespace AfSdr.Dsp;
 
 internal sealed class SpectrumProcessor
 {
-    public const int Size = 4096;
-    private readonly Complex[] fft = new Complex[Size];
-    private readonly double[] window = new double[Size];
-    private readonly double[] average = new double[Size];
+    public const int DefaultSize = 4096;
+    internal static readonly int[] SupportedSizes = [1024, 2048, 4096, 8192, 16384];
+    public int Size { get; }
+    private readonly Complex[] fft;
+    private readonly double[] window;
+    private readonly double[] average;
     private readonly double normalization;
     private bool initialized;
 
-    public SpectrumProcessor()
+    public SpectrumProcessor(int size = DefaultSize)
     {
+        if (!SupportedSizes.Contains(size)) throw new ArgumentOutOfRangeException(nameof(size));
+        Size = size;
+        fft = new Complex[size];
+        window = new double[size];
+        average = new double[size];
         for (int i = 0; i < Size; i++) window[i] = 0.5 - 0.5 * Math.Cos(2 * Math.PI * i / (Size - 1));
         normalization = Math.Pow(window.Sum(), 2);
     }
