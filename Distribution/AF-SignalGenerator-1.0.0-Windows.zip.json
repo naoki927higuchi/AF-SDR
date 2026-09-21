@@ -1,0 +1,9 @@
+﻿{
+    "ReleaseVersion":  "1.0.0",
+    "PreparedAt":  "2026-09-22T03:11:47.4855598+09:00",
+    "PreparationCommit":  "bcb03aca932a8b658c6fa4ab3a69b7060b8c9b6c",
+    "SourceZip":  "dist/AF-SignalGenerator-1.0.0-win-x64.zip",
+    "SHA256":  "278c0bba83048213d10e86060f4e2f084083d4c5fab8515724e099e2e01bee89",
+    "Size":  152748,
+    "Note":  "Explicitly selected local package; complete product-specific validation before committing and pushing."
+}

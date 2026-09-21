@@ -1,0 +1,9 @@
+﻿{
+    "ReleaseVersion":  "1.12.1",
+    "PreparedAt":  "2026-09-22T03:11:46.8503316+09:00",
+    "PreparationCommit":  "bcb03aca932a8b658c6fa4ab3a69b7060b8c9b6c",
+    "SourceZip":  "dist/AF-SDR-1.12.1-win-x64.zip",
+    "SHA256":  "c9782328e4f9dcd5e0065006ac3d53acab4b8bccec115bcdbc33390dd0e86dac",
+    "Size":  1254377,
+    "Note":  "Explicitly selected local package; complete product-specific validation before committing and pushing."
+}

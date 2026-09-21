@@ -1,5 +1,14 @@
 # 更新履歴
 
+## 配布ZIPのGitHub初回配置 — 2026-09-22 03:12:14 +0900
+
+- AF-SDR 1.12.1: `Distribution/AF-SDR-1.12.1-Windows.zip`（SHA256と選定情報JSONを併記）。
+- AF-SignalGenerator 1.0.0: `Distribution/AF-SignalGenerator-1.0.0-Windows.zip`（SHA256と選定情報JSONを併記）。
+- 現時点の最新検証済み配布内容を選定。ゲーム・アプリの再ビルドと版数変更は行わない。
+- 過去の開発ZIPはGit管理対象外のまま保持。今回選んだZIPだけをリモートへ送信。
+- 欠けていたZIP本体を保存済み配布フォルダーから復元し、保存されていた元ZIPのSHA256との完全一致を確認。既存Release検証も全件成功（RTL-SDRハードウェアは使用しない）。
+
+
 日時は日本標準時（JST / UTC+09:00）。
 
 ## AF-SignalGenerator 1.0.0 配布パッケージ — 2026-09-22 01:09 JST

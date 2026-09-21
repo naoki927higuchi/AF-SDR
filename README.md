@@ -268,3 +268,10 @@ QAMの粗周波数取得は±0.15 rad/symbol内を探索します。PLLで追従
 
 開発中のZIPはローカル管理のみとし、公開時に選定したZIPだけをGitHubへ送ります。
 出力先・検証・公開準備の手順は [RELEASE-POLICY.md](RELEASE-POLICY.md) を参照してください。
+
+## GitHubから取得する配布ZIP
+
+- [AF-SDR 1.12.1](Distribution/AF-SDR-1.12.1-Windows.zip) / [SHA256](Distribution/AF-SDR-1.12.1-Windows.zip.sha256)
+- [AF-SignalGenerator 1.0.0](Distribution/AF-SignalGenerator-1.0.0-Windows.zip) / [SHA256](Distribution/AF-SignalGenerator-1.0.0-Windows.zip.sha256)
+
+アクセス権のあるユーザーがZIPのファイル画面からダウンロードできます。ZIP全体を展開し、同梱説明書に従ってください。
