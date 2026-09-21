@@ -11,10 +11,10 @@ internal sealed record ReceiveSettings(uint SampleRate, int? ManualGain = null, 
     internal static bool ValidRate(uint rate) => rate is > 225_000 and <= 300_000 or > 900_000 and <= 3_200_000;
     internal static int? ResolveInitialGain(int? desired, int[] supported) => desired is int value && supported.Length > 0
         ? supported.MinBy(gain => Math.Abs((long)gain - value)) : null;
-    internal void Validate()
+    internal void Validate(bool fileInput = false)
     {
         DigitalOptions.Validate(SampleRate);
-        if (!ValidRate(SampleRate)) throw new ArgumentOutOfRangeException(nameof(SampleRate));
+        if (fileInput ? SampleRate is < 250_000 or > 3_200_000 : !ValidRate(SampleRate)) throw new ArgumentOutOfRangeException(nameof(SampleRate));
         if (!Dsp.SpectrumProcessor.SupportedSizes.Contains(FftSize)) throw new ArgumentOutOfRangeException(nameof(FftSize));
         if (!Enum.IsDefined(Window)) throw new ArgumentOutOfRangeException(nameof(Window));
         if (!RxBandwidths.Contains(RxBandwidth) || RxBandwidth > SampleRate) throw new ArgumentOutOfRangeException(nameof(RxBandwidth));

@@ -26,6 +26,7 @@ internal static class Program
         if (args.Contains("--audio-smoke"))
         {
             FmChecks.SilentOutputSmoke();
+            IqWaveChecks.SilentAudio();
             args = args.Where(a => a != "--audio-smoke").ToArray();
         }
         VerifyFrequencyInput();
@@ -66,6 +67,10 @@ internal static class Program
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         PersistenceChecks.Run();
+        string? iqOriginal = null;
+        int iqArgument = Array.IndexOf(args, "--iq-wave");
+        if (iqArgument >= 0) { iqOriginal = args[iqArgument + 1]; args = args.Where((_, n) => n != iqArgument && n != iqArgument + 1).ToArray(); }
+        IqWaveChecks.Run(iqOriginal);
         using var form = new MainForm(Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json"));
         CreateHandles(form);
         VerifySettingsControls(form);

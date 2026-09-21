@@ -14,6 +14,8 @@ internal sealed class SpectrumView : Control
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal float[]? Values { get; set; }
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal uint? TuneFrequency { get; set; }
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal uint CenterFrequency { get; set; } = 80_000_000;
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal uint SampleRate { get; set; } = Receiver.RequestedRate;
@@ -135,7 +137,7 @@ internal sealed class SpectrumView : Control
         using var centered = new StringFormat { Alignment = StringAlignment.Center };
         g.DrawString($"レベル (dBFS / FFT bin)   中心 {FrequencyInput.Format(CenterFrequency)}   RxBW {FrequencyInput.Format(RxBandwidth)} Hz ({(FmEnabled ? "FM ON" : "FM OFF")})", Font, ink, plot.Left, 10 * scale);
         string cursorText = pointer is Point position && FrequencyAt(position) is uint hz
-            ? $"カーソル: {hz:N0} Hz  ({hz / 1e6:F6} MHz)  |  左クリックで中心に設定"
+            ? $"カーソル: {hz:N0} Hz  ({hz / 1e6:F6} MHz)  |  左クリックで選局"
             : "スペクトラム／ウォーターフォールを左クリックで選局";
         g.DrawString(cursorText, Font, ink, plot.Left, 32 * scale);
         for (int tick = 0; tick <= 6; tick++)
@@ -176,7 +178,7 @@ internal sealed class SpectrumView : Control
         }
         if (ShowRxBandwidth)
         {
-            float middle = plot.Left + plot.Width / 2;
+            float middle = plot.Left + plot.Width * (float)(0.5 + ((double)(TuneFrequency ?? CenterFrequency) - CenterFrequency) / Range.Bandwidth);
             float halfWidth = plot.Width * RxBandwidth / Range.Bandwidth / 2;
             using var shade = new SolidBrush(Color.FromArgb(22, 92, 162, 245));
             using var boundary = new Pen(Color.FromArgb(155, 194, 245)) { DashStyle = DashStyle.Dash };
@@ -200,7 +202,7 @@ internal sealed class SpectrumView : Control
         float[]? values = Values;
         if (values is null)
         {
-            g.DrawString("接続すると受信スペクトラムを表示します", Font, ink,
+            g.DrawString("接続・再生するとスペクトラムを表示します", Font, ink,
                 plot.Left + plot.Width / 2, plot.Top + plot.Height / 2, centered);
             return;
         }

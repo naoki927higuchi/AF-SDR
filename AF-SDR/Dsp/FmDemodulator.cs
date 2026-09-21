@@ -17,7 +17,7 @@ internal sealed class FmDemodulator
 
     internal FmDemodulator(uint sampleRate, uint rxBandwidth = 200_000)
     {
-        if (!ReceiveSettings.ValidRate(sampleRate)) throw new ArgumentOutOfRangeException(nameof(sampleRate));
+        if (sampleRate < 250_000 || sampleRate > 3_200_000) throw new ArgumentOutOfRangeException(nameof(sampleRate));
         if (!ReceiveSettings.RxBandwidths.Contains(rxBandwidth) || rxBandwidth > sampleRate) throw new ArgumentOutOfRangeException(nameof(rxBandwidth));
         double rate = sampleRate;
         while (rate >= 500_000)
@@ -30,13 +30,15 @@ internal sealed class FmDemodulator
         discriminatorScale = rate / (2 * Math.PI * 75_000);
     }
 
-    internal float[] Process(ReadOnlySpan<byte> iq)
+    internal float[] Process(ReadOnlySpan<byte> iq) => Process(IqSamples.FromRtl(iq));
+
+    internal float[] Process(ReadOnlySpan<float> iq)
     {
         if ((iq.Length & 1) != 0) throw new ArgumentException("I/Q samples must be paired.");
         var output = new List<float>(iq.Length / 8);
         for (int n = 0; n < iq.Length; n += 2)
         {
-            float i = (iq[n] - 127.5f) / 128, q = (iq[n + 1] - 127.5f) / 128;
+            float i = iq[n], q = iq[n + 1];
             bool available = true;
             foreach (var stage in decimators)
                 if (!stage.Push(i, q, out i, out q)) { available = false; break; }

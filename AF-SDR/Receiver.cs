@@ -6,11 +6,11 @@ using AfSdr.Audio;
 
 namespace AfSdr;
 
-internal sealed class Receiver
+internal sealed class Receiver : IReceiver
 {
     public const uint RequestedRate = 2_048_000;
     private sealed record State(uint Frequency, uint Rate, ReceiveSettings Settings, int SpectrumRevision, int AudioRevision, int DigitalRevision);
-    private sealed record Block(long StartByte, byte[] Data, State State);
+    private sealed record Block(long StartByte, float[] Data, State State);
     private sealed record SpectrumResult(float[] Values, int Revision);
     private readonly IRtlDevice device;
     private readonly Func<float, IAudioOutput> createAudio;
@@ -26,8 +26,8 @@ internal sealed class Receiver
     private DigitalResult? digitalResult;
     private Exception? digitalFailure;
     private Task digitalProcessing = Task.CompletedTask;
-    internal ConstellationFrame? Constellation => Volatile.Read(ref digitalResult) is { } result && result.Revision == Volatile.Read(ref state)?.DigitalRevision ? result.Frame : null;
-    internal Exception? DigitalFailure => Volatile.Read(ref digitalFailure);
+    public ConstellationFrame? Constellation => Volatile.Read(ref digitalResult) is { } result && result.Revision == Volatile.Read(ref state)?.DigitalRevision ? result.Frame : null;
+    public Exception? DigitalFailure => Volatile.Read(ref digitalFailure);
     private State? state;
     private SpectrumResult? spectrum;
     private Task reading = Task.CompletedTask, processing = Task.CompletedTask, audioProcessing = Task.CompletedTask;
@@ -274,7 +274,7 @@ internal sealed class Receiver
                     var data = new byte[checked((int)length)];
                     Marshal.Copy(pointer, data, 0, data.Length);
                     long end = Interlocked.Add(ref receivedBytes, data.Length);
-                    var block = new Block(end - data.Length, data, current);
+                    var block = new Block(end - data.Length, IqSamples.FromRtl(data), current);
                     blocks.Writer.TryWrite(block);
                     audioBlocks.Writer.TryWrite(block);
                     if (current.Settings.DigitalOptions.Enabled) digitalBlocks.Writer.TryWrite(block);

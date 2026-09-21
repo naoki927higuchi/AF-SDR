@@ -24,7 +24,9 @@ internal sealed class SpectrumProcessor
         normalization = Math.Pow(window.Sum(), 2);
     }
 
-    public float[] Process(ReadOnlySpan<byte> iq)
+    public float[] Process(ReadOnlySpan<byte> iq) => Process(IqSamples.FromRtl(iq));
+
+    public float[] Process(ReadOnlySpan<float> iq)
     {
         if (iq.Length < Size * 2) throw new ArgumentException("I/Q block is too short.");
         // Remove the block's DC offset before applying the window.
@@ -32,7 +34,7 @@ internal sealed class SpectrumProcessor
         for (int i = 0; i < Size; i++) { meanI += iq[2 * i]; meanQ += iq[2 * i + 1]; }
         meanI /= Size; meanQ /= Size;
         for (int i = 0; i < Size; i++)
-            fft[i] = new Complex((iq[2 * i] - meanI) / 128, (iq[2 * i + 1] - meanQ) / 128) * window[i];
+            fft[i] = new Complex(iq[2 * i] - meanI, iq[2 * i + 1] - meanQ) * window[i];
         for (int i = 1, j = 0; i < Size; i++)
         {
             int bit = Size >> 1;

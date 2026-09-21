@@ -5,6 +5,8 @@ namespace AfSdr;
 
 internal sealed record UserSettings
 {
+    public bool FileInput { get; init; }
+    public string LastIqPath { get; init; } = "";
     public int SchemaVersion { get; init; } = 1;
     public Rectangle WindowBounds { get; init; }
     public bool Maximized { get; init; }

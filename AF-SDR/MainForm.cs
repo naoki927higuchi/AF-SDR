@@ -1,6 +1,6 @@
 namespace AfSdr;
 
-internal sealed class MainForm : Form
+internal sealed partial class MainForm : Form
 {
     private readonly ComboBox devices = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 240 };
     private readonly Button refresh = new() { Text = "再検索", AutoSize = true };
@@ -30,7 +30,7 @@ internal sealed class MainForm : Form
     private readonly DigitalForm digitalForm;
     private readonly Label status = new() { AutoSize = true, Text = "未接続", Margin = new Padding(12, 8, 12, 8) };
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 40 };
-    private Receiver? receiver;
+    private IReceiver? receiver;
     private bool busy, closing, allowClose;
     private bool updatingSettings;
     private long lastBytes;
@@ -56,7 +56,7 @@ internal sealed class MainForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         Font = new Font("Yu Gothic UI", 10);
         AutoScaleMode = AutoScaleMode.Dpi;
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 6, ColumnCount = 1 };
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 7, ColumnCount = 1 };
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -64,10 +64,10 @@ internal sealed class MainForm : Form
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         var connectionRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(10) };
-        connectionRow.Controls.AddRange([new Label { Text = "RTL-SDR", AutoSize = true, Padding = new Padding(0, 6, 8, 0) }, devices, refresh, connect]);
+        connectionRow.Controls.AddRange([inputSource, devices, refresh, connect]);
         connectionRow.Controls.AddRange([fmEnabled, volumeLabel, volume, audioStatus]);
         var tuningRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(10, 0, 10, 8) };
-        tuningRow.Controls.AddRange([new Label { Text = "中心周波数 (Hz / k / M)", AutoSize = true, Padding = new Padding(0, 6, 8, 0) }, frequency, apply,
+        tuningRow.Controls.AddRange([frequencyLabel, frequency, apply,
             new Label { Text = "FFTポイント数", AutoSize = true, Padding = new Padding(12, 6, 0, 0) }, fftSize,
             new Label { Text = "FFT窓", AutoSize = true, Padding = new Padding(12, 6, 0, 0) }, fftWindow]);
         foreach (int size in Dsp.SpectrumProcessor.SupportedSizes) fftSize.Items.Add(size);
@@ -96,10 +96,13 @@ internal sealed class MainForm : Form
         root.Controls.Add(tuningRow, 0, 1);
         root.Controls.Add(settingsRow, 0, 2);
         root.Controls.Add(levelRow, 0, 3);
-        root.Controls.Add(spectrum, 0, 4);
-        root.Controls.Add(status, 0, 5);
+        root.RowStyles.Insert(4, new RowStyle(SizeType.AutoSize));
+        root.Controls.Add(BuildFileControls(), 0, 4);
+        root.Controls.Add(spectrum, 0, 5);
+        root.Controls.Add(status, 0, 6);
         Controls.Add(root);
         RestoreSettings();
+        RestoreFileSettings();
         frequencyError.ContainerControl = this;
         frequency.TextChanged += (_, _) => frequencyError.SetError(frequency, string.Empty);
         refresh.Click += (_, _) => RefreshDevices();
@@ -148,7 +151,7 @@ internal sealed class MainForm : Form
         timer.Tick += async (_, _) => await UpdateDisplayAsync();
         Shown += (_, _) =>
         {
-            RefreshDevices();
+            if (!FileMode) RefreshDevices();
             if (loadError is not null) status.Text = loadError + " " + status.Text;
             timer.Start();
         };
@@ -203,8 +206,9 @@ internal sealed class MainForm : Form
         {
             WindowBounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds,
             Maximized = WindowState == FormWindowState.Maximized || (WindowState == FormWindowState.Minimized && lastMaximized),
-            Frequency = hz,
-            SampleRate = ((RateOption)sampleRate.SelectedItem!).Hertz,
+            Frequency = FileMode ? liveFrequency : hz,
+            FileInput = FileMode, LastIqPath = filePath.Text,
+            SampleRate = FileMode ? liveRate : ((RateOption)sampleRate.SelectedItem!).Hertz,
             ManualGain = gainMode.SelectedIndex == 1,
             Gain = (rfGain.SelectedItem as GainOption)?.TenthsDb ?? savedSettings.Gain,
             DisplayBandwidth = ((RateOption)bandwidth.SelectedItem!).Hertz,
@@ -232,6 +236,7 @@ internal sealed class MainForm : Form
     private async Task ApplyReceiverSettingsAsync()
     {
         if (busy || closing || updatingSettings) return;
+        if (FileMode) { await ApplyFileSettingsAsync(receiver?.Frequency); return; }
         digitalForm.SetSampleRate(((RateOption)sampleRate.SelectedItem!).Hertz);
         if (receiver is null)
         {
@@ -286,6 +291,7 @@ internal sealed class MainForm : Form
     private async Task ChangeConnectionAsync(bool retune, uint? frequencyOverride = null)
     {
         if (busy || closing) return;
+        if (FileMode) { await ApplyFileSettingsAsync(frequencyOverride); return; }
         bool start = receiver is null || retune;
         uint requestedHz = frequencyOverride ?? 0;
         // Validate before stopping reception: invalid text must not interrupt the signal/history.
@@ -310,8 +316,9 @@ internal sealed class MainForm : Form
             {
                 if (receiver is null)
                 {
-                    receiver = new Receiver { Volume = volume.Value / 100f };
-                    await receiver.StartAsync((uint)devices.SelectedIndex, requestedHz, settings);
+                    var live = new Receiver { Volume = volume.Value / 100f };
+                    receiver = live;
+                    await live.StartAsync((uint)devices.SelectedIndex, requestedHz, settings);
                     gainMode.SelectedIndex = receiver.AppliedGain.HasValue ? 1 : 0;
                     spectrum.Clear();
                 }
@@ -360,6 +367,7 @@ internal sealed class MainForm : Form
             finally { busy = false; SetControls(); }
             return;
         }
+        if (receiver is FileReceiver file) { UpdateFileDisplay(file); return; }
         long bytes = receiver.ReceivedBytes;
         if (bytes != lastBytes) { lastBytes = bytes; lastData = DateTime.UtcNow; }
         spectrum.DisplayFrame(receiver.Spectrum);
@@ -389,6 +397,7 @@ internal sealed class MainForm : Form
         fmEnabled.Enabled = enabled;
         volume.Enabled = !closing;
         if (receiver is null) audioStatus.Text = fmEnabled.Checked ? "FM ON（接続待ち）" : "FM OFF";
+        SetFileControls(enabled);
     }
 
     private void ShowError(Exception ex)

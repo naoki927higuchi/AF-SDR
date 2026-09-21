@@ -87,6 +87,7 @@ internal sealed class DigitalForm : Form
     }
     private async Task ApplyAsync()
     {
+        if (updating) return;
         var selected = (DigitalMode)mode.SelectedIndex;
         Settings = new DigitalSettings(enabled.Checked, selected, (int)baud.Value, (double)rolloff.SelectedItem!,
             selected == DigitalMode.Qam ? (int)order.SelectedItem! : Settings.QamOrder,
@@ -101,6 +102,17 @@ internal sealed class DigitalForm : Form
         sampleRate = rate; baud.Maximum = Math.Min(100000, rate / 8);
         Settings = Settings.Normalize(rate) with { Enabled = Settings.Enabled };
         UpdateConstraints();
+    }
+    internal void RestoreOptions(DigitalSettings settings)
+    {
+        Settings = settings;
+        mode.SelectedIndex = (int)settings.Mode;
+        baud.Value = settings.SymbolRate;
+        rolloff.SelectedItem = settings.Rolloff;
+        ConfigureMode();
+        updating = true;
+        try { enabled.Checked = settings.Enabled; }
+        finally { updating = false; }
     }
     internal void Display(ConstellationFrame? frame, uint frequency, Exception? error, bool connected)
     {

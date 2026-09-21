@@ -103,12 +103,14 @@ internal sealed class ConstellationProcessor
         return taps;
     }
 
-    internal void Process(ReadOnlySpan<byte> iq)
+    internal void Process(ReadOnlySpan<byte> iq) => Process(IqSamples.FromRtl(iq));
+
+    internal void Process(ReadOnlySpan<float> iq)
     {
         if ((iq.Length & 1) != 0) throw new ArgumentException("I/Q samples must be paired.");
         for (int n = 0; n < iq.Length; n += 2)
         {
-            float i = (iq[n] - 127.5f) / 128, q = (iq[n + 1] - 127.5f) / 128;
+            float i = iq[n], q = iq[n + 1];
             bool ready = true;
             foreach (var stage in decimators)
                 if (!stage.Push(i, q, out i, out q)) { ready = false; break; }
