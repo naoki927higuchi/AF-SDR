@@ -1,0 +1,28 @@
+AF-SDR 1.12.1 third-party components
+
+1. RTL-SDR Blog V1.4.0 (rtlsdr.dll, Windows x64)
+   https://github.com/rtlsdrblog/rtl-sdr-blog/releases/tag/V1.4.0
+   GNU GPL version 2 or later. See Licenses/rtl-sdr-COPYING.
+   Copyright notices: see Source/ThirdParty/rtl-sdr-blog-1.4.0 and AUTHORS.
+   Original vendor DLL is distributed unchanged. Its embedded version string
+   is v0.6.0-131-gaed0 (upstream release tag V1.4.0, commit aed0ea1).
+   Source includes the upstream CMake/autotools build files and headers.
+
+2. libusb 1.0.29 (statically linked in the vendor rtlsdr.dll)
+   https://github.com/libusb/libusb/releases/tag/v1.0.29
+   GNU LGPL version 2.1 or later. See Licenses/libusb-COPYING.
+   Copyright notices: see the source archive and its AUTHORS file.
+   Source/ThirdParty/libusb-1.0.29.tar.bz2 is the unmodified official source
+   release. Version 1.0.29.11953 is identified in the DLL's version logging
+   code and agrees with the release source's version_nano.h.
+   Archive SHA-256:
+   5977fc950f8d1395ccea9bd48c06b3f808fd3c2c961b44b0c2e6e29fc3a70a85
+
+3. Windows/.NET/Visual C++ runtime prerequisites
+   Microsoft runtimes and device drivers are NOT included in this package.
+   Install the prerequisites from Microsoft; see README-ja.txt.
+   Vendor utility executables, pthreadVC2.dll and msvcr100.dll are omitted:
+   the packaged rtlsdr.dll does not import those DLLs. Its non-system native
+   runtime dependency is the Visual C++ v14 runtime (VCRUNTIME140.dll/UCRT).
+
+AF-SDR licensing does not replace the individual third-party notices.

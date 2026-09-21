@@ -1,0 +1,25 @@
+AF-SDR 1.12.1 ソースからのビルド
+
+Windows x64と.NET 9 SDKを用意してください。
+このSourceフォルダーのBuild-AF-SDR.ps1をPowerShellで実行します。
+  powershell -ExecutionPolicy Bypass -File .\Build-AF-SDR.ps1
+出力: Source\AF-SDR\AF-SDR\bin\Release-1.12.1\AF-SDR.exe
+
+AF-SDRの全C#ソースとプロジェクトを収録しています。本体は外部NuGetパッケージを
+使用しません。SDKの初回セットアップ等にネットワークが必要になる場合があります。
+この配布は独立したAF-SignalGeneratorを含まないため、ソリューションを新設せず
+AF-SDR.csprojを直接ビルドします。元の開発ソリューションは変更していません。
+Lib配下のrtlsdr.dllは配布ルートと同じ未変更の公式バイナリです。
+
+第三者ソース:
+ThirdParty/rtl-sdr-blog-1.4.0: RTL-SDR Blog V1.4.0のソース一式。
+ThirdParty/libusb-1.0.29.tar.bz2: 内部でリンクされるlibusbの公式ソース一式。
+libusbのアーカイブを展開すると、MSVCプロジェクト、Windows用構成ファイル、
+INSTALL_WIN.txtを含むビルド情報があります。RTL-SDR側はREADME、CMakeLists.txt、
+cmake/Modules/FindLibUSB.cmake等を参照してx64でビルドしてください。
+ソース・ビルド定義・著作権表示は上流のものを保持しています。
+配布元DLLの完全なコンパイラー環境やビルドフラグは公開ソースから確定できないため、
+第三者DLLのバイト単位での再現は保証しません。改変した互換DLLに置き換えて利用できます。
+
+SourceのAF-SDRアプリケーションと配布スクリプトはGPL-2.0-or-laterです。
+第三者ソースには各ソースのライセンスが適用されます。
