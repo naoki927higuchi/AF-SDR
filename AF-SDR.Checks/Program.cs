@@ -12,6 +12,13 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        try { Run(args); }
+        catch (Exception ex) { Console.Error.WriteLine(ex); Environment.ExitCode = 1; }
+    }
+
+    private static void Run(string[] args)
+    {
+        WaterfallStabilityChecks.Run();
         SettingsChecks.RunAsync().GetAwaiter().GetResult();
         FmChecks.Run();
         if (args.Contains("--audio-smoke"))
@@ -56,7 +63,8 @@ internal static class Program
         Application.SetHighDpiMode(HighDpiMode.SystemAware);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
-        using var form = new MainForm();
+        PersistenceChecks.Run();
+        using var form = new MainForm(Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json"));
         CreateHandles(form);
         VerifySettingsControls(form);
         VerifyWaterfall();

@@ -79,7 +79,7 @@ internal sealed class Receiver
                 device.Open(index); opened = true;
                 var actual = device.Configure(frequency, settings);
                 SupportedGains = actual.Gains; AppliedGain = actual.Gain;
-                Volatile.Write(ref state, new State(actual.Frequency, actual.Rate, settings, 1, 1));
+                Volatile.Write(ref state, new State(actual.Frequency, actual.Rate, settings with { ManualGain = actual.Gain }, 1, 1));
             });
             processing = Task.Run(ProcessSpectrumAsync);
             audioProcessing = Task.Run(ProcessAudioAsync);

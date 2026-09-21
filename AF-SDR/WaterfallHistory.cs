@@ -11,7 +11,7 @@ internal sealed class WaterfallHistory : IDisposable
         Color.FromArgb(0, 146, 190), Color.FromArgb(69, 215, 140),
         Color.FromArgb(255, 217, 66), Color.FromArgb(255, 80, 38)];
     internal const int Capacity = 300;
-    private Bitmap bitmap = new(SpectrumProcessor.DefaultSize, Capacity, PixelFormat.Format32bppArgb);
+    private Bitmap bitmap = new(SpectrumProcessor.DefaultSize, Capacity * 2, PixelFormat.Format32bppArgb);
     private int[] row = new int[SpectrumProcessor.DefaultSize];
     private readonly float[]?[] levels = new float[Capacity][];
     private float minimum = -120, maximum = 0;
@@ -23,7 +23,7 @@ internal sealed class WaterfallHistory : IDisposable
         if (values.Length != row.Length)
         {
             if (!SpectrumProcessor.SupportedSizes.Contains(values.Length)) throw new ArgumentException("Unexpected FFT size.");
-            var replacement = new Bitmap(values.Length, Capacity, PixelFormat.Format32bppArgb);
+            var replacement = new Bitmap(values.Length, Capacity * 2, PixelFormat.Format32bppArgb);
             bitmap.Dispose();
             bitmap = replacement;
             row = new int[values.Length];
@@ -38,9 +38,13 @@ internal sealed class WaterfallHistory : IDisposable
     private void WriteRow(int target, float[] values)
     {
         for (int i = 0; i < row.Length; i++) row[i] = LevelColor(values[i], minimum, maximum).ToArgb();
-        var data = bitmap.LockBits(new Rectangle(0, target, row.Length, 1), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
-        try { Marshal.Copy(row, 0, data.Scan0, row.Length); }
-        finally { bitmap.UnlockBits(data); }
+        // Mirror each ring row: any head now exposes one contiguous chronological region.
+        foreach (int y in new[] { target, target + Capacity })
+        {
+            var data = bitmap.LockBits(new Rectangle(0, y, row.Length, 1), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+            try { Marshal.Copy(row, 0, data.Scan0, row.Length); }
+            finally { bitmap.UnlockBits(data); }
+        }
     }
 
     internal void SetLevels(float lower, float upper)
@@ -64,16 +68,11 @@ internal sealed class WaterfallHistory : IDisposable
     internal void Draw(Graphics graphics, RectangleF target, DisplayRange? range = null)
     {
         if (Count == 0) return;
-        int first = Math.Min(Count, Capacity - head);
-        float rowHeight = target.Height / Capacity;
         float sourceX = (float)(range?.FirstBin(bitmap.Width) ?? 0);
         float sourceWidth = (float)(range?.BinWidth(bitmap.Width) ?? bitmap.Width);
-        graphics.DrawImage(bitmap, new RectangleF(target.X, target.Y, target.Width, first * rowHeight),
-            new RectangleF(sourceX, head, sourceWidth, first), GraphicsUnit.Pixel);
-        int rest = Count - first;
-        if (rest > 0)
-            graphics.DrawImage(bitmap, new RectangleF(target.X, target.Y + first * rowHeight, target.Width, rest * rowHeight),
-                new RectangleF(sourceX, 0, sourceWidth, rest), GraphicsUnit.Pixel);
+        // One scaling transform avoids sampling-phase changes at a moving wrap seam.
+        graphics.DrawImage(bitmap, new RectangleF(target.X, target.Y, target.Width, target.Height * Count / Capacity),
+            new RectangleF(sourceX, head, sourceWidth, Count), GraphicsUnit.Pixel);
     }
 
     internal void Clear() { Count = 0; head = 0; Array.Clear(levels); }

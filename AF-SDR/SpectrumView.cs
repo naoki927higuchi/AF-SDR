@@ -76,6 +76,7 @@ internal sealed class SpectrumView : Control
 
     internal void DisplayFrame(float[]? frame)
     {
+        if (ReferenceEquals(lastFrame, frame)) return;
         Values = frame;
         if (frame is not null && !ReferenceEquals(lastFrame, frame)) waterfall.Add(frame);
         lastFrame = frame;

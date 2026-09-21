@@ -32,6 +32,7 @@ internal sealed class RtlDevice : IRtlDevice
             gains = new int[count];
             if (count > 0 && RtlSdrNative.rtlsdr_get_tuner_gains(handle, gains) != count) throw new IOException("RFゲイン取得件数が一致しません。");
         }
+        if (applied is null) settings = settings with { ManualGain = ReceiveSettings.ResolveInitialGain(settings.ManualGain, gains) };
         if (settings.ManualGain is int selected && !gains.Contains(selected)) throw new IOException("RFゲインが非対応です。");
         if (applied is null || applied.ManualGain.HasValue != settings.ManualGain.HasValue)
             RtlSdrNative.Check(RtlSdrNative.rtlsdr_set_tuner_gain_mode(handle, settings.ManualGain.HasValue ? 1 : 0), "RFゲインモード設定");

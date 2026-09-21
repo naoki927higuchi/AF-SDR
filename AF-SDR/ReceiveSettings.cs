@@ -8,6 +8,8 @@ internal sealed record ReceiveSettings(uint SampleRate, int? ManualGain = null, 
     internal static readonly uint[] Rates = [250_000, 300_000, 1_000_000, 1_024_000, 1_400_000,
         1_800_000, 2_048_000, 2_400_000, 2_560_000, 2_880_000, 3_200_000];
     internal static bool ValidRate(uint rate) => rate is > 225_000 and <= 300_000 or > 900_000 and <= 3_200_000;
+    internal static int? ResolveInitialGain(int? desired, int[] supported) => desired is int value && supported.Length > 0
+        ? supported.MinBy(gain => Math.Abs((long)gain - value)) : null;
     internal void Validate()
     {
         if (!ValidRate(SampleRate)) throw new ArgumentOutOfRangeException(nameof(SampleRate));

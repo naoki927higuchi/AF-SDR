@@ -35,8 +35,17 @@ internal sealed class MainForm : Form
     private long lastBytes;
     private DateTime lastData = DateTime.UtcNow;
 
-    public MainForm()
+    private readonly string settingsPath;
+    private readonly UserSettings savedSettings;
+    private readonly string? loadError;
+    private uint lastFrequency;
+    private bool lastMaximized;
+
+    public MainForm(string? settingsPath = null)
     {
+        this.settingsPath = settingsPath ?? SettingsStore.DefaultPath;
+        savedSettings = SettingsStore.Load(this.settingsPath, out loadError);
+        lastFrequency = savedSettings.Frequency;
         Text = "AF-SDR";
         ClientSize = new Size(1280, 960);
         MinimumSize = new Size(1000, 800);
@@ -83,6 +92,7 @@ internal sealed class MainForm : Form
         root.Controls.Add(spectrum, 0, 4);
         root.Controls.Add(status, 0, 5);
         Controls.Add(root);
+        RestoreSettings();
         frequencyError.ContainerControl = this;
         frequency.TextChanged += (_, _) => frequencyError.SetError(frequency, string.Empty);
         refresh.Click += (_, _) => RefreshDevices();
@@ -111,8 +121,7 @@ internal sealed class MainForm : Form
         };
         devices.SelectedIndexChanged += (_, _) =>
         {
-            rfGain.Items.Clear();
-            gainMode.SelectedIndex = 0;
+            // Keep the user's preference; validate it against the selected tuner on connection.
             SetControls();
         };
         spectrum.FrequencySelected += async hz =>
@@ -130,10 +139,73 @@ internal sealed class MainForm : Form
             }
         };
         timer.Tick += async (_, _) => await UpdateDisplayAsync();
-        Shown += (_, _) => { RefreshDevices(); timer.Start(); };
+        Shown += (_, _) =>
+        {
+            RefreshDevices();
+            if (loadError is not null) status.Text = loadError + " " + status.Text;
+            timer.Start();
+        };
+        Resize += (_, _) => { if (WindowState != FormWindowState.Minimized) lastMaximized = WindowState == FormWindowState.Maximized; };
         FormClosing += OnClosing;
         FormClosed += (_, _) => { timer.Dispose(); frequencyError.Dispose(); };
         SetControls();
+    }
+
+    private void RestoreSettings()
+    {
+        frequency.Text = FrequencyInput.Format(savedSettings.Frequency);
+        sampleRate.SelectedIndex = Array.IndexOf(ReceiveSettings.Rates, savedSettings.SampleRate);
+        fftSize.SelectedItem = savedSettings.FftSize;
+        fftWindow.SelectedItem = savedSettings.Window;
+        rxBandwidth.SelectedIndex = Array.IndexOf(ReceiveSettings.RxBandwidths, savedSettings.RxBandwidth);
+        gainMode.SelectedIndex = savedSettings.ManualGain ? 1 : 0;
+        rfGain.Items.Add(new GainOption(savedSettings.Gain));
+        rfGain.SelectedIndex = 0;
+        levelLower.Value = savedSettings.LevelLower;
+        levelUpper.Value = savedSettings.LevelUpper;
+        UpdateLevels();
+        volume.Value = savedSettings.Volume;
+        volumeLabel.Text = $"音量 {volume.Value}%";
+        showRxBandwidth.Checked = spectrum.ShowRxBandwidth = savedSettings.ShowRxBandwidth;
+        spectrum.CenterFrequency = savedSettings.Frequency;
+        spectrum.SampleRate = savedSettings.SampleRate;
+        spectrum.RxBandwidth = savedSettings.RxBandwidth;
+        UpdateBandwidthOptions(savedSettings.SampleRate);
+        for (int i = 0; i < bandwidth.Items.Count; i++)
+            if (((RateOption)bandwidth.Items[i]!).Hertz == savedSettings.DisplayBandwidth) bandwidth.SelectedIndex = i;
+        spectrum.RequestedBandwidth = savedSettings.DisplayBandwidth;
+        // A new session always starts disconnected and with FM off.
+    }
+
+    protected override void OnLoad(EventArgs e)
+    {
+        base.OnLoad(e);
+        var areas = Screen.AllScreens.OrderByDescending(screen => screen.Primary).Select(screen => screen.WorkingArea).ToArray();
+        var bounds = SettingsStore.FitWindow(savedSettings.WindowBounds, areas, MinimumSize);
+        MinimumSize = new Size(Math.Min(MinimumSize.Width, bounds.Width), Math.Min(MinimumSize.Height, bounds.Height));
+        StartPosition = FormStartPosition.Manual;
+        Bounds = bounds;
+        if (savedSettings.Maximized) WindowState = FormWindowState.Maximized;
+        lastMaximized = savedSettings.Maximized;
+    }
+
+    internal UserSettings CaptureSettings()
+    {
+        uint hz = receiver?.Frequency ?? (FrequencyInput.TryParse(frequency.Text, out uint parsed, out _) ? parsed : lastFrequency);
+        return new UserSettings
+        {
+            WindowBounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds,
+            Maximized = WindowState == FormWindowState.Maximized || (WindowState == FormWindowState.Minimized && lastMaximized),
+            Frequency = hz,
+            SampleRate = ((RateOption)sampleRate.SelectedItem!).Hertz,
+            ManualGain = gainMode.SelectedIndex == 1,
+            Gain = (rfGain.SelectedItem as GainOption)?.TenthsDb ?? savedSettings.Gain,
+            DisplayBandwidth = ((RateOption)bandwidth.SelectedItem!).Hertz,
+            FftSize = (int)fftSize.SelectedItem!, Window = (Dsp.FftWindow)fftWindow.SelectedItem!,
+            LevelLower = levelLower.Value, LevelUpper = levelUpper.Value,
+            RxBandwidth = ((RateOption)rxBandwidth.SelectedItem!).Hertz,
+            ShowRxBandwidth = showRxBandwidth.Checked, Volume = volume.Value
+        };
     }
 
     private void RefreshDevices()
@@ -230,6 +302,7 @@ internal sealed class MainForm : Form
                 {
                     receiver = new Receiver { Volume = volume.Value / 100f };
                     await receiver.StartAsync((uint)devices.SelectedIndex, requestedHz, settings);
+                    gainMode.SelectedIndex = receiver.AppliedGain.HasValue ? 1 : 0;
                     spectrum.Clear();
                 }
                 else
@@ -237,6 +310,7 @@ internal sealed class MainForm : Form
                     var changes = await receiver.UpdateAsync(requestedHz, settings);
                     if (changes.Spectrum) spectrum.Clear();
                 }
+                lastFrequency = receiver.Frequency;
                 frequency.Text = FrequencyInput.Format(receiver.Frequency);
                 spectrum.CenterFrequency = receiver.Frequency;
                 spectrum.SampleRate = receiver.SampleRate;
@@ -319,7 +393,14 @@ internal sealed class MainForm : Form
         closing = true; timer.Stop(); SetControls();
         status.Text = "受信を停止しています…";
         while (busy) await Task.Delay(25);
+        var settings = CaptureSettings();
         await StopReceiverAsync();
+        try { SettingsStore.Save(settingsPath, settings); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            MessageBox.Show(this, "設定を保存できませんでした。次回は以前の設定で起動します。\n" + ex.Message,
+                "AF-SDR 設定保存", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
         allowClose = true;
         Close();
     }
