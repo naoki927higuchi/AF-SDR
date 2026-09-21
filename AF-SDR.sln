@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AF-SDR", "AF-SDR\AF-SDR.csp
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AF-SDR.Checks", "AF-SDR.Checks\AF-SDR.Checks.csproj", "{D8762231-2871-4AC9-B063-0D5878CB3ABC}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AF-SignalGenerator", "AF-SignalGenerator\AF-SignalGenerator.csproj", "{385B16DA-3593-4F9F-99DC-1AB0EE20F4E3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -41,6 +43,18 @@ Global
 		{D8762231-2871-4AC9-B063-0D5878CB3ABC}.Release|x64.Build.0 = Release|Any CPU
 		{D8762231-2871-4AC9-B063-0D5878CB3ABC}.Release|x86.ActiveCfg = Release|Any CPU
 		{D8762231-2871-4AC9-B063-0D5878CB3ABC}.Release|x86.Build.0 = Release|Any CPU
+		{385B16DA-3593-4F9F-99DC-1AB0EE20F4E3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{385B16DA-3593-4F9F-99DC-1AB0EE20F4E3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{385B16DA-3593-4F9F-99DC-1AB0EE20F4E3}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{385B16DA-3593-4F9F-99DC-1AB0EE20F4E3}.Debug|x64.Build.0 = Debug|Any CPU
+		{385B16DA-3593-4F9F-99DC-1AB0EE20F4E3}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{385B16DA-3593-4F9F-99DC-1AB0EE20F4E3}.Debug|x86.Build.0 = Debug|Any CPU
+		{385B16DA-3593-4F9F-99DC-1AB0EE20F4E3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{385B16DA-3593-4F9F-99DC-1AB0EE20F4E3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{385B16DA-3593-4F9F-99DC-1AB0EE20F4E3}.Release|x64.ActiveCfg = Release|Any CPU
+		{385B16DA-3593-4F9F-99DC-1AB0EE20F4E3}.Release|x64.Build.0 = Release|Any CPU
+		{385B16DA-3593-4F9F-99DC-1AB0EE20F4E3}.Release|x86.ActiveCfg = Release|Any CPU
+		{385B16DA-3593-4F9F-99DC-1AB0EE20F4E3}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

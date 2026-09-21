@@ -71,6 +71,10 @@ internal static class Program
         int iqArgument = Array.IndexOf(args, "--iq-wave");
         if (iqArgument >= 0) { iqOriginal = args[iqArgument + 1]; args = args.Where((_, n) => n != iqArgument && n != iqArgument + 1).ToArray(); }
         IqWaveChecks.Run(iqOriginal);
+        string? goldenFolder = null;
+        int goldenArgument = Array.IndexOf(args, "--generator-golden");
+        if (goldenArgument >= 0) { goldenFolder = args[goldenArgument + 1]; args = args.Where((_, n) => n != goldenArgument && n != goldenArgument + 1).ToArray(); }
+        GeneratorChecks.Run(goldenFolder);
         using var form = new MainForm(Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json"));
         CreateHandles(form);
         VerifySettingsControls(form);

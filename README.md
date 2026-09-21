@@ -2,6 +2,12 @@
 
 C# / .NET 9 / WinForms / Windows x64 の最小構成RTL-SDRスペクトラム表示アプリです。
 
+## AF-SignalGenerator（独立EXE）
+
+同じAF-SDR.slnに、既知のデジタル変調IQ WAVを生成するAF-SignalGenerator 1.0.0を追加しました。Releaseビルド後、`AF-SignalGenerator/bin/Release/net9.0-windows/AF-SignalGenerator.exe` で単独起動できます。AF-SDR本体のバージョンは1.10.0です。
+
+[生成器の使い方・数式・JSON仕様・検証結果](AF-SignalGenerator/SIGNAL-MODEL.md)。GoldenはQPSK / 100 MHz / 9600 baud / α=.35 / 250 kS/s / −20 dBFS / 10秒。Generateで作ったWAVをAF-SDRのIQファイル入力で開き、デジタル表示をQPSK・9600 baud・α=.35に設定すると確認できます。FM音声はOFFにしてください。
+
 ## ビルド・起動
 
 インストール済みの .NET 9 SDK を使用します。外部NuGetパッケージは不要です。

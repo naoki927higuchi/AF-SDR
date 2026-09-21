@@ -2,6 +2,18 @@
 
 日時は日本標準時（JST / UTC+09:00）。
 
+## AF-SignalGenerator 1.0.0 — 2026-09-21 17:07 JST
+
+- 既存AF-SDR.slnへ独立したWindows x64/.NET 9 WinFormsプロジェクトを追加。新規製品の初回バージョンは1.0.0。別ソリューションやAF-SDR本体への参照・実装変更はなし。本体は1.10.0を維持。
+- BPSK/QPSK/8PSK、16/64/256QAM、π/4 Shift QPSK、OOK/2・4・8値ASK、2/4/8FSK、MSK、BT指定GMSKを生成。方式別UI・パルス整形・連続位相を実装。
+- 公称Fc/Baudと独立なCarrier offset/drift/jitter、Baud ppm offset/drift/jitter、初期位相・Timingの固定/Random指定、AWGN/SNRを追加。
+- SplitMix64とPRBS15/23、Seedで再現可能。ジッターは分散正規化した滑らかなGaussianノット補間で、位相・シンボル位置を積分。単純なランダムホッピングを行わない。
+- float32 RF64 IQ WAVと正解条件・モデル・実測値・真値時系列・SHA-256の付随JSONを保存。現行AF-SDRのWAV読込とファイル名周波数規約に適合。既存ファイルは上書きせず、生成途中のキャンセルに対応。
+- 全パラメータと入出力フォルダをLocalAppDataへ保存・復元。確認付きGolden復帰ではパスを保持。付随JSONからの条件再読込に対応。
+- 合成条件・帯域・クロック・6σ余裕の事前検証、全実現サンプルの条件チェック、2パスによる正確な複素RMS設定を実装。
+- AF-SDRで全方式のWAV読み取りとGolden QPSKの同期を検証（EVM約1.24%、−20.000000 dBFS）。再現性・RMS/SNR・ドリフト・ジッター統計/連続性・PRBS・MSK・設定復元・キャンセル・既存回帰を検証。
+- Releaseビルドは警告・エラー0件。8PSK/256QAM/GMSK/8FSK等のAF-SDR側専用同期表示は今回追加していない。
+
 ## 1.10.0 — 2026-09-21 16:15 JST
 
 - SDR#のIQ WAV入力を追加。既存機能を保つ機能追加としてマイナーバージョン更新。
