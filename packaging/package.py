@@ -60,7 +60,7 @@ commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT).decode(
     'Deployment: framework-dependent; .NET 9 Windows Desktop Runtime x64 required.\n', encoding='utf-8')
 entries = sorted(p for p in DEST.rglob('*') if p.is_file())
 (DEST / 'SHA256SUMS.txt').write_text(''.join(f'{sha(p)}  {p.relative_to(DEST).as_posix()}\n' for p in entries), encoding='utf-8')
-zip_path = DEST.with_suffix('.zip')
+zip_path = DEST.parent / (DEST.name + '.zip')
 with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as z:
     for p in sorted(DEST.rglob('*')):
         if p.is_file():
