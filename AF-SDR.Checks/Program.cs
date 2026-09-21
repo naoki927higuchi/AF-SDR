@@ -19,6 +19,7 @@ internal static class Program
     private static void Run(string[] args)
     {
         ConstellationChecks.Run();
+        ModulationChecks.Run();
         WaterfallStabilityChecks.Run();
         SettingsChecks.RunAsync().GetAwaiter().GetResult();
         FmChecks.Run();
@@ -85,6 +86,18 @@ internal static class Program
             using var digitalBitmap = new Bitmap(digital.Width, digital.Height);
             digital.DrawToBitmap(digitalBitmap, new Rectangle(Point.Empty, digitalBitmap.Size));
             if (args.Length > 0) digitalBitmap.Save(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[0]))!, "constellation-check.png"));
+        }
+        foreach (var preview in ModulationChecks.Previews)
+        {
+            using var digital = new DigitalForm(preview.Settings);
+            CreateHandles(digital);
+            ((CheckBox)typeof(DigitalForm).GetField("enabled", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(digital)!).Checked = true;
+            Require(digital.Settings == preview.Settings, "Mode-specific UI settings round trip");
+            digital.Display(preview.Frame, 435_000_000, null, true);
+            using var digitalBitmap = new Bitmap(digital.Width, digital.Height);
+            digital.DrawToBitmap(digitalBitmap, new Rectangle(Point.Empty, digitalBitmap.Size));
+            if (args.Length > 0) digitalBitmap.Save(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[0]))!,
+                $"{preview.Settings.Mode}-{preview.Settings.QamOrder}-{preview.Settings.AskOrder}-{preview.Settings.FskOrder}-{preview.Settings.FskSpacing}-check.png"));
         }
         using var plot = new SpectrumView { Size = new Size(1050, 480), Values = new SpectrumProcessor().Process(Tone(233)) };
         using var plotted = new Bitmap(plot.Width, plot.Height);

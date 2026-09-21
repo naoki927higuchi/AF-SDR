@@ -70,6 +70,15 @@ internal static class SettingsChecks
             settings = settings with { Digital = new DigitalSettings(true, DigitalMode.Bpsk, 4800) };
             await receiver.UpdateAsync(80_000_000, settings);
             Require(receiver.AudioRevision == audioRevision && device.Configures == 1, "Digital mode/baud changes preserve audio and USB");
+            foreach (var mode in new[] { DigitalMode.Qam, DigitalMode.Pi4Qpsk, DigitalMode.Ask, DigitalMode.Fsk, DigitalMode.Msk })
+            {
+                int fftRevision = receiver.SpectrumRevision;
+                settings = settings with { Digital = new DigitalSettings(true, mode, QamOrder: 64, AskOrder: 4, FskOrder: 4) };
+                await receiver.UpdateAsync(80_000_000, settings);
+                await Until(() => receiver.Constellation is not null);
+                Require(receiver.AudioRevision == audioRevision && receiver.SpectrumRevision == fftRevision && device.Configures == 1 && receiver.DigitalFailure is null,
+                    "Extended modulation changes only digital DSP: " + mode);
+            }
             settings = settings with { Digital = settings.Digital! with { Enabled = false } };
             await receiver.UpdateAsync(80_000_000, settings);
             Require(receiver.Constellation is null, "Digital OFF hides stale results");

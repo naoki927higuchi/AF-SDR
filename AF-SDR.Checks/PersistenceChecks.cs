@@ -17,7 +17,7 @@ internal static class PersistenceChecks
                 WindowBounds = new Rectangle(-1500, 120, 1100, 850), Maximized = true,
                 Frequency = 78_400_001, SampleRate = 1_024_000, ManualGain = true, Gain = 197,
                 DisplayBandwidth = 500_000, FftSize = 16384, Window = FftWindow.BlackmanHarris,
-                LevelLower = -90, LevelUpper = -20, RxBandwidth = 150_000, ShowRxBandwidth = false, Volume = 47, Digital = new DigitalSettings(false, DigitalMode.Bpsk, 19200, 0.5)
+                LevelLower = -90, LevelUpper = -20, RxBandwidth = 150_000, ShowRxBandwidth = false, Volume = 47, Digital = new DigitalSettings(false, DigitalMode.Fsk, 19200, 0.5, 64, 4, 4, 3200)
             };
             SettingsStore.Save(path, settings);
             Require(SettingsStore.Load(path, out _) == settings, "Every setting survives JSON round trip");
@@ -45,6 +45,15 @@ internal static class PersistenceChecks
             Require(small.Contains(SettingsStore.FitWindow(new Rectangle(100, 100, 2000, 1500), [small], new Size(1000, 800))), "Small screen keeps title bar and whole window accessible");
             Require(ReceiveSettings.ResolveInitialGain(200, [0, 197, 496]) == 197 && ReceiveSettings.ResolveInitialGain(197, []) is null,
                 "Saved RF gain maps to nearest supported value or auto");
+            var invalidDigital = new DigitalSettings(true, DigitalMode.Fsk, 90000, double.NaN, 123, 9, 4, double.PositiveInfinity).Normalize(250000);
+            invalidDigital.Validate(250000);
+            Require(!invalidDigital.Enabled && invalidDigital.SymbolRate == 31250 && invalidDigital.QamOrder == 16 && invalidDigital.AskOrder == 2, "Digital saved settings normalization");
+            var wideFsk = new DigitalSettings(true, DigitalMode.Fsk, 30000, FskOrder: 4, FskSpacing: 500000).Normalize(250000);
+            wideFsk.Validate(250000);
+            Require(wideFsk.ChannelCutoff <= 100000, "FSK restored bandwidth fits input Nyquist margin");
+            foreach (uint inputRate in ReceiveSettings.Rates)
+                foreach (int tones in new[] { 2, 4 })
+                    new DigitalSettings(true, DigitalMode.Fsk, 100000, FskOrder: tones, FskSpacing: 500000).Normalize(inputRate).Validate(inputRate);
             File.WriteAllText(path, "{broken json");
             Require(SettingsStore.Load(path, out var error) == new UserSettings() && error is not null, "Corrupt file falls back safely");
             File.WriteAllText(path, JsonSerializer.Serialize(settings with { SampleRate = 42, FftSize = 7, Window = (FftWindow)999, LevelLower = 0, LevelUpper = -20, RxBandwidth = 1, Volume = 200 }));

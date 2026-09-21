@@ -39,10 +39,7 @@ internal sealed record UserSettings
             LevelUpper = levelsValid ? LevelUpper : defaults.LevelUpper,
             RxBandwidth = ReceiveSettings.RxBandwidths.Contains(RxBandwidth) ? RxBandwidth : defaults.RxBandwidth,
             Volume = Math.Clamp(Volume, 0, 100),
-            Digital = new DigitalSettings(false,
-                Digital is not null && Enum.IsDefined(Digital.Mode) ? Digital.Mode : DigitalMode.Qpsk,
-                Math.Clamp(Digital?.SymbolRate ?? 9600, 1000, (int)Math.Min(100000, rate / 8)),
-                new[] { 0.2, 0.35, 0.5, 1.0 }.Contains(Digital?.Rolloff ?? 0.35) ? Digital?.Rolloff ?? 0.35 : 0.35)
+            Digital = (Digital ?? new()).Normalize(rate)
         };
     }
 }
