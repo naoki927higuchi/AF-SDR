@@ -3,3 +3,6 @@
 .vs/
 *-check.png
 dist/
+
+# Local recordings and generated signal samples
+/wav/
