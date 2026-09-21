@@ -13,14 +13,14 @@ internal sealed class SpectrumProcessor
     private readonly double normalization;
     private bool initialized;
 
-    public SpectrumProcessor(int size = DefaultSize)
+    public SpectrumProcessor(int size = DefaultSize, FftWindow windowType = FftWindow.Hann)
     {
         if (!SupportedSizes.Contains(size)) throw new ArgumentOutOfRangeException(nameof(size));
         Size = size;
         fft = new Complex[size];
         window = new double[size];
         average = new double[size];
-        for (int i = 0; i < Size; i++) window[i] = 0.5 - 0.5 * Math.Cos(2 * Math.PI * i / (Size - 1));
+        for (int i = 0; i < Size; i++) window[i] = WindowFunctions.Value(windowType, i, Size);
         normalization = Math.Pow(window.Sum(), 2);
     }
 

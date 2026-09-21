@@ -15,16 +15,17 @@ internal sealed class FmDemodulator
     private readonly double deAlpha = 1 - Math.Exp(-1.0 / (AudioRate * 50e-6));
     private readonly double dcPole = Math.Exp(-2 * Math.PI * 20 / AudioRate);
 
-    internal FmDemodulator(uint sampleRate)
+    internal FmDemodulator(uint sampleRate, uint rxBandwidth = 200_000)
     {
         if (!ReceiveSettings.ValidRate(sampleRate)) throw new ArgumentOutOfRangeException(nameof(sampleRate));
+        if (!ReceiveSettings.RxBandwidths.Contains(rxBandwidth) || rxBandwidth > sampleRate) throw new ArgumentOutOfRangeException(nameof(rxBandwidth));
         double rate = sampleRate;
         while (rate >= 500_000)
         {
             decimators.Add(new ComplexFir(Fir.LowPass(63, 0.25), 2));
             rate /= 2;
         }
-        channel = new ComplexFir(Fir.LowPass(129, 100_000 / rate), 1);
+        channel = new ComplexFir(Fir.LowPass(129, rxBandwidth / 2.0 / rate), 1);
         audio = new AudioResampler(rate);
         discriminatorScale = rate / (2 * Math.PI * 75_000);
     }

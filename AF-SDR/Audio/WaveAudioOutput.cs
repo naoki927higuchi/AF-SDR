@@ -2,8 +2,17 @@ using System.Runtime.InteropServices;
 
 namespace AfSdr.Audio;
 
+internal interface IAudioOutput : IDisposable
+{
+    Exception? Failure { get; }
+    float Volume { set; }
+    void Write(float[] samples);
+    void Clear();
+    Task Ready { get; }
+}
+
 // WinMM WAVE_MAPPER selects the system playback device. No global mixer volume changes.
-internal sealed class WaveAudioOutput : IDisposable
+internal sealed class WaveAudioOutput : IAudioOutput
 {
     private readonly AudioBuffer buffer = new();
     private readonly CancellationTokenSource stop = new();
@@ -11,11 +20,11 @@ internal sealed class WaveAudioOutput : IDisposable
     private readonly TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Exception? failure;
     private float volume;
-    internal Exception? Failure => Volatile.Read(ref failure);
-    internal float Volume { set => Volatile.Write(ref volume, Math.Clamp(value, 0, 1)); }
-    internal void Write(float[] samples) => buffer.Write(samples);
-    internal void Clear() => buffer.Clear();
-    internal Task Ready => ready.Task;
+    public Exception? Failure => Volatile.Read(ref failure);
+    public float Volume { set => Volatile.Write(ref volume, Math.Clamp(value, 0, 1)); }
+    public void Write(float[] samples) => buffer.Write(samples);
+    public void Clear() => buffer.Clear();
+    public Task Ready => ready.Task;
 
     internal WaveAudioOutput(float volume)
     {

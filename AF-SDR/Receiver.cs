@@ -9,19 +9,44 @@ namespace AfSdr;
 internal sealed class Receiver
 {
     public const uint RequestedRate = 2_048_000;
-    private readonly object handleLock = new();
+    private sealed record State(uint Frequency, uint Rate, ReceiveSettings Settings, int SpectrumRevision, int AudioRevision);
+    private sealed record Block(long StartByte, byte[] Data, State State);
+    private sealed record SpectrumResult(float[] Values, int Revision);
+    private readonly IRtlDevice device;
+    private readonly Func<float, IAudioOutput> createAudio;
+    private readonly SemaphoreSlim operations = new(1);
     private readonly CancellationTokenSource stop = new();
-    private readonly Channel<byte[]> blocks = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(2)
+    private readonly Channel<Block> blocks = Channel.CreateBounded<Block>(new BoundedChannelOptions(2)
     { SingleReader = true, SingleWriter = true, FullMode = BoundedChannelFullMode.DropOldest });
-    private readonly TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private readonly Channel<AudioBlock> audioBlocks = Channel.CreateBounded<AudioBlock>(new BoundedChannelOptions(4)
-    { SingleReader = true, SingleWriter = true, FullMode = BoundedChannelFullMode.DropOldest });
-    private readonly record struct AudioBlock(long StartByte, byte[] Data);
-    private Task audioProcessing = Task.CompletedTask;
-    private WaveAudioOutput? audioOutput;
-    private Exception? audioFailure;
+    private readonly Channel<Block> audioBlocks = Channel.CreateBounded<Block>(new BoundedChannelOptions(4)
+    { SingleReader = true, SingleWriter = false, FullMode = BoundedChannelFullMode.DropOldest });
+    private State? state;
+    private SpectrumResult? spectrum;
+    private Task reading = Task.CompletedTask, processing = Task.CompletedTask, audioProcessing = Task.CompletedTask;
+    private IAudioOutput? audioOutput;
+    private Exception? failure, audioFailure;
     private float volume = 0.3f;
+    private int streamStopping;
+    private long receivedBytes;
+    private bool opened;
+    public uint Frequency => Volatile.Read(ref state)?.Frequency ?? 0;
+    public uint SampleRate => Volatile.Read(ref state)?.Rate ?? 0;
+    public int[] SupportedGains { get; private set; } = [];
+    public int? AppliedGain { get; private set; }
+    public float[]? Spectrum
+    {
+        get
+        {
+            var current = Volatile.Read(ref state);
+            var result = Volatile.Read(ref spectrum);
+            return result?.Revision == current?.SpectrumRevision ? result?.Values : null;
+        }
+    }
+    public Exception? Failure => Volatile.Read(ref failure);
     public Exception? AudioFailure => Volatile.Read(ref audioFailure);
+    public long ReceivedBytes => Interlocked.Read(ref receivedBytes);
+    internal int SpectrumRevision => Volatile.Read(ref state)?.SpectrumRevision ?? 0;
+    internal int AudioRevision => Volatile.Read(ref state)?.AudioRevision ?? 0;
     public float Volume
     {
         set
@@ -31,160 +56,208 @@ internal sealed class Receiver
             if (output is not null) output.Volume = value;
         }
     }
-    private IntPtr handle;
-    private Task reading = Task.CompletedTask, processing = Task.CompletedTask;
-    private float[]? spectrum;
-    private Exception? failure;
-    private long receivedBytes;
-    public uint Frequency { get; private set; }
-    public uint SampleRate { get; private set; }
-    public int[] SupportedGains { get; private set; } = [];
-    public int? AppliedGain { get; private set; }
-    public float[]? Spectrum => Volatile.Read(ref spectrum);
-    public Exception? Failure => Volatile.Read(ref failure);
-    public long ReceivedBytes => Interlocked.Read(ref receivedBytes);
-
+    internal Receiver(IRtlDevice? device = null, Func<float, IAudioOutput>? createAudio = null)
+    {
+        this.device = device ?? new RtlDevice();
+        this.createAudio = createAudio ?? (volume => new WaveAudioOutput(volume));
+    }
     public static string[] ListDevices()
     {
         uint count = RtlSdrNative.rtlsdr_get_device_count();
         return Enumerable.Range(0, checked((int)count)).Select(i => $"{i}: {Marshal.PtrToStringAnsi(RtlSdrNative.rtlsdr_get_device_name((uint)i))}").ToArray();
     }
 
-    public Task StartAsync(uint index, uint frequency, ReceiveSettings settings)
+    public async Task StartAsync(uint index, uint frequency, ReceiveSettings settings)
     {
         settings.Validate();
-        if (settings.FmEnabled) audioProcessing = Task.Run(ProcessAudioAsync);
-        processing = Task.Run(async () =>
+        await operations.WaitAsync();
+        try
         {
-            var dsp = new SpectrumProcessor(settings.FftSize);
-            await foreach (byte[] block in blocks.Reader.ReadAllAsync())
+            if (opened || stop.IsCancellationRequested) throw new InvalidOperationException("受信セッションは再利用できません。");
+            await Task.Run(() =>
             {
-                // Analyze all complete FFT blocks; bounded channel prevents latency buildup.
-                for (int offset = 0; offset + dsp.Size * 2 <= block.Length; offset += dsp.Size * 2)
-                    Volatile.Write(ref spectrum, dsp.Process(block.AsSpan(offset, dsp.Size * 2)));
+                device.Open(index); opened = true;
+                var actual = device.Configure(frequency, settings);
+                SupportedGains = actual.Gains; AppliedGain = actual.Gain;
+                Volatile.Write(ref state, new State(actual.Frequency, actual.Rate, settings, 1, 1));
+            });
+            processing = Task.Run(ProcessSpectrumAsync);
+            audioProcessing = Task.Run(ProcessAudioAsync);
+            StartStream();
+        }
+        catch { device.Close(); opened = false; throw; }
+        finally { operations.Release(); }
+    }
+
+    public async Task<SettingsChange> UpdateAsync(uint frequency, ReceiveSettings settings)
+    {
+        settings.Validate();
+        await operations.WaitAsync();
+        try
+        {
+            var previous = state ?? throw new InvalidOperationException("未接続です。");
+            if (!opened || stop.IsCancellationRequested) throw new InvalidOperationException("受信は終了しています。");
+            var change = SettingsChange.Between(previous.Frequency, previous.Settings, frequency, settings);
+            uint actualFrequency = previous.Frequency, actualRate = previous.Rate;
+            if (change.Audio)
+            {
+                var output = Volatile.Read(ref audioOutput);
+                if (output is not null) { output.Volume = 0; output.Clear(); }
             }
-        });
-        reading = Task.Run(() => Read(index, frequency, settings));
-        return ready.Task;
+            if (change.Hardware)
+            {
+                await StopStreamAsync();
+                var actual = await Task.Run(() => device.Configure(frequency, settings));
+                actualFrequency = actual.Frequency; actualRate = actual.Rate;
+                SupportedGains = actual.Gains; AppliedGain = actual.Gain;
+            }
+            var next = new State(actualFrequency, actualRate, settings,
+                previous.SpectrumRevision + (change.Spectrum ? 1 : 0), previous.AudioRevision + (change.Audio ? 1 : 0));
+            Volatile.Write(ref state, next);
+            if (change.Audio)
+            {
+                Volatile.Write(ref audioFailure, null);
+                audioBlocks.Writer.TryWrite(new Block(ReceivedBytes, [], next));
+            }
+            if (change.Hardware) StartStream();
+            return change;
+        }
+        catch (Exception ex) { Volatile.Write(ref failure, ex); throw; }
+        finally { operations.Release(); }
+    }
+
+    private async Task ProcessSpectrumAsync()
+    {
+        SpectrumProcessor? dsp = null;
+        int revision = -1;
+        try
+        {
+            await foreach (var block in blocks.Reader.ReadAllAsync(stop.Token))
+            {
+                if (block.State.SpectrumRevision != Volatile.Read(ref state)!.SpectrumRevision) continue;
+                if (revision != block.State.SpectrumRevision)
+                {
+                    dsp = new SpectrumProcessor(block.State.Settings.FftSize, block.State.Settings.Window);
+                    revision = block.State.SpectrumRevision;
+                }
+                for (int offset = 0; offset + dsp!.Size * 2 <= block.Data.Length; offset += dsp.Size * 2)
+                    Volatile.Write(ref spectrum, new SpectrumResult(dsp.Process(block.Data.AsSpan(offset, dsp.Size * 2)), revision));
+            }
+        }
+        catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
+        catch (Exception ex) { Volatile.Write(ref failure, ex); }
     }
 
     private async Task ProcessAudioAsync()
     {
-        WaveAudioOutput? output = null;
+        IAudioOutput? output = null;
+        FmDemodulator? demodulator = null;
+        int revision = -1, failedRevision = -1;
+        long expected = 0;
         try
         {
-            await ready.Task;
-            stop.Token.ThrowIfCancellationRequested();
-            var demodulator = new FmDemodulator(SampleRate);
-            output = new WaveAudioOutput(Volatile.Read(ref volume));
-            Volatile.Write(ref audioOutput, output);
-            await output.Ready;
-            long expected = 0;
             await foreach (var block in audioBlocks.Reader.ReadAllAsync(stop.Token))
             {
-                if (output.Failure is { } error) throw error;
-                if (block.StartByte != expected)
+                var current = Volatile.Read(ref state)!;
+                if (block.State.AudioRevision != current.AudioRevision || failedRevision == current.AudioRevision) continue;
+                try
                 {
-                    // Never differentiate phase across missing I/Q; discard old audio and fade in.
-                    demodulator = new FmDemodulator(SampleRate);
-                    output.Clear();
+                    if (!current.Settings.FmEnabled)
+                    {
+                        Volatile.Write(ref audioOutput, null);
+                        output?.Dispose(); output = null; demodulator = null;
+                        revision = current.AudioRevision;
+                        continue;
+                    }
+                    if (output?.Failure is { } error) throw error;
+                    if (revision != current.AudioRevision || block.StartByte != expected)
+                    {
+                        demodulator = new FmDemodulator(current.Rate, current.Settings.RxBandwidth);
+                        output?.Clear();
+                        revision = current.AudioRevision;
+                    }
+                    if (output is null)
+                    {
+                        output = createAudio(Volatile.Read(ref volume));
+                        Volatile.Write(ref audioOutput, output);
+                        await output.Ready;
+                    }
+                    expected = block.StartByte + block.Data.Length;
+                    if (block.Data.Length == 0) continue;
+                    var samples = demodulator!.Process(block.Data);
+                    if (revision == Volatile.Read(ref state)!.AudioRevision)
+                    {
+                        output.Volume = Volatile.Read(ref volume);
+                        output.Write(samples);
+                    }
                 }
-                expected = block.StartByte + block.Data.Length;
-                output.Write(demodulator.Process(block.Data));
+                catch (Exception ex)
+                {
+                    Volatile.Write(ref audioFailure, ex);
+                    Volatile.Write(ref audioOutput, null);
+                    output?.Dispose(); output = null; demodulator = null;
+                    failedRevision = current.AudioRevision;
+                }
             }
         }
         catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
-        catch (Exception ex) { Volatile.Write(ref audioFailure, ex); }
-        finally
-        {
-            Volatile.Write(ref audioOutput, null);
-            output?.Dispose();
-        }
+        finally { Volatile.Write(ref audioOutput, null); output?.Dispose(); }
     }
 
-    private void Read(uint index, uint frequency, ReceiveSettings settings)
+    private void StartStream()
     {
-        RtlSdrNative.ReadCallback callback = (buffer, length, _) =>
+        Volatile.Write(ref streamStopping, 0);
+        reading = Task.Run(() =>
         {
-            // Exceptions must never escape across the native callback boundary.
+            RtlSdrNative.ReadCallback callback = (pointer, length, _) =>
+            {
+                try
+                {
+                    if (Volatile.Read(ref streamStopping) != 0 || stop.IsCancellationRequested) return;
+                    var current = Volatile.Read(ref state)!;
+                    var data = new byte[checked((int)length)];
+                    Marshal.Copy(pointer, data, 0, data.Length);
+                    long end = Interlocked.Add(ref receivedBytes, data.Length);
+                    var block = new Block(end - data.Length, data, current);
+                    blocks.Writer.TryWrite(block);
+                    audioBlocks.Writer.TryWrite(block);
+                }
+                catch (Exception ex) { Volatile.Write(ref failure, ex); device.Cancel(); }
+            };
             try
             {
-                if (stop.IsCancellationRequested) return;
-                var copy = new byte[checked((int)length)];
-                Marshal.Copy(buffer, copy, 0, copy.Length);
-                long endByte = Interlocked.Add(ref receivedBytes, copy.Length);
-                blocks.Writer.TryWrite(copy);
-                if (settings.FmEnabled && AudioFailure is null) audioBlocks.Writer.TryWrite(new AudioBlock(endByte - copy.Length, copy));
-            }
-            catch (Exception ex)
-            {
-                Volatile.Write(ref failure, ex);
-                RtlSdrNative.rtlsdr_cancel_async(handle);
-            }
-        };
-        try
-        {
-            RtlSdrNative.Check(RtlSdrNative.rtlsdr_open(out var opened, index), "接続");
-            lock (handleLock) handle = opened;
-            RtlSdrNative.Check(RtlSdrNative.rtlsdr_set_sample_rate(handle, settings.SampleRate), "サンプルレート設定");
-            int count = RtlSdrNative.rtlsdr_get_tuner_gains(handle, null);
-            if (count < 0 || count > 1024) throw new IOException("対応RFゲインを取得できません。");
-            if (count > 0)
-            {
-                var gains = new int[count];
-                int returned = RtlSdrNative.rtlsdr_get_tuner_gains(handle, gains);
-                if (returned != count) throw new IOException("対応RFゲインの取得件数が一致しません。");
-                SupportedGains = gains.Distinct().Order().ToArray();
-            }
-            RtlSdrNative.Check(RtlSdrNative.rtlsdr_set_tuner_gain_mode(handle, settings.ManualGain.HasValue ? 1 : 0), "RFゲインモード設定");
-            if (settings.ManualGain is int gain)
-            {
-                if (!SupportedGains.Contains(gain)) throw new IOException("選択したRFゲインはこのデバイスで使用できません。");
-                RtlSdrNative.Check(RtlSdrNative.rtlsdr_set_tuner_gain(handle, gain), "RFゲイン設定");
-                AppliedGain = RtlSdrNative.rtlsdr_get_tuner_gain(handle);
-                if (AppliedGain != gain) throw new IOException("RFゲインの設定値を確認できません。");
-            }
-            RtlSdrNative.Check(RtlSdrNative.rtlsdr_set_agc_mode(handle, 0), "ADC AGC設定");
-            RtlSdrNative.Check(RtlSdrNative.rtlsdr_set_center_freq(handle, frequency), "中心周波数設定");
-            Frequency = RtlSdrNative.rtlsdr_get_center_freq(handle);
-            SampleRate = RtlSdrNative.rtlsdr_get_sample_rate(handle);
-            if (Frequency == 0 || SampleRate == 0) throw new IOException("受信設定を取得できません。");
-            RtlSdrNative.Check(RtlSdrNative.rtlsdr_reset_buffer(handle), "受信バッファ初期化");
-            ready.TrySetResult();
-            if (!stop.IsCancellationRequested)
-            {
-                int result = RtlSdrNative.rtlsdr_read_async(handle, callback, IntPtr.Zero, 8, 32768);
-                if (!stop.IsCancellationRequested)
+                if (Volatile.Read(ref streamStopping) != 0) return;
+                int result = device.Read(callback);
+                if (Volatile.Read(ref streamStopping) == 0 && !stop.IsCancellationRequested)
                     throw new IOException($"受信が終了しました (RTL-SDR: {result})。再接続してください。");
             }
-        }
-        catch (Exception ex) { Volatile.Write(ref failure, ex); ready.TrySetException(ex); }
-        finally
+            catch (Exception ex) { Volatile.Write(ref failure, ex); }
+            finally { GC.KeepAlive(callback); }
+        });
+    }
+
+    private async Task StopStreamAsync()
+    {
+        Volatile.Write(ref streamStopping, 1);
+        while (!reading.IsCompleted)
         {
-            // Close only after read_async and every callback have returned.
-            lock (handleLock)
-            {
-                if (handle != IntPtr.Zero) { RtlSdrNative.rtlsdr_close(handle); handle = IntPtr.Zero; }
-            }
-            blocks.Writer.TryComplete();
-            audioBlocks.Writer.TryComplete();
-            GC.KeepAlive(callback);
+            device.Cancel();
+            await Task.WhenAny(reading, Task.Delay(25));
         }
+        await reading;
     }
 
     public async Task StopAsync()
     {
-        stop.Cancel();
-        Volume = 0;
-        // Retry covers cancellation arriving just before native read_async enters RUNNING.
-        while (!reading.IsCompleted)
+        await operations.WaitAsync();
+        try
         {
-            lock (handleLock)
-                if (handle != IntPtr.Zero) RtlSdrNative.rtlsdr_cancel_async(handle);
-            await Task.WhenAny(reading, Task.Delay(25));
+            stop.Cancel(); Volume = 0;
+            await StopStreamAsync();
+            blocks.Writer.TryComplete(); audioBlocks.Writer.TryComplete();
+            await Task.WhenAll(processing, audioProcessing);
+            if (opened) { device.Close(); opened = false; }
         }
-        await reading;
-        await processing;
-        await audioProcessing;
+        finally { operations.Release(); }
     }
 }

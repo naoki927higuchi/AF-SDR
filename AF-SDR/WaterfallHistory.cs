@@ -13,6 +13,8 @@ internal sealed class WaterfallHistory : IDisposable
     internal const int Capacity = 300;
     private Bitmap bitmap = new(SpectrumProcessor.DefaultSize, Capacity, PixelFormat.Format32bppArgb);
     private int[] row = new int[SpectrumProcessor.DefaultSize];
+    private readonly float[]?[] levels = new float[Capacity][];
+    private float minimum = -120, maximum = 0;
     private int head;
     internal int Count { get; private set; }
 
@@ -28,16 +30,30 @@ internal sealed class WaterfallHistory : IDisposable
             Clear();
         }
         head = (head + Capacity - 1) % Capacity;
-        for (int i = 0; i < row.Length; i++) row[i] = LevelColor(values[i]).ToArgb();
-        var data = bitmap.LockBits(new Rectangle(0, head, row.Length, 1), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
-        try { Marshal.Copy(row, 0, data.Scan0, row.Length); }
-        finally { bitmap.UnlockBits(data); }
+        levels[head] = (float[])values.Clone();
+        WriteRow(head, values);
         Count = Math.Min(Count + 1, Capacity);
     }
 
-    internal static Color LevelColor(float db)
+    private void WriteRow(int target, float[] values)
     {
-        float value = Math.Clamp((db + 110) / 100, 0, 1) * (Stops.Length - 1);
+        for (int i = 0; i < row.Length; i++) row[i] = LevelColor(values[i], minimum, maximum).ToArgb();
+        var data = bitmap.LockBits(new Rectangle(0, target, row.Length, 1), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+        try { Marshal.Copy(row, 0, data.Scan0, row.Length); }
+        finally { bitmap.UnlockBits(data); }
+    }
+
+    internal void SetLevels(float lower, float upper)
+    {
+        if (!float.IsFinite(lower) || !float.IsFinite(upper) || upper <= lower) throw new ArgumentException("Invalid level range.");
+        if (minimum == lower && maximum == upper) return;
+        minimum = lower; maximum = upper;
+        for (int i = 0; i < Capacity; i++) if (levels[i] is { } values) WriteRow(i, values);
+    }
+
+    internal static Color LevelColor(float db, float lower = -120, float upper = 0)
+    {
+        float value = Math.Clamp((db - lower) / (upper - lower), 0, 1) * (Stops.Length - 1);
         int index = Math.Min((int)value, Stops.Length - 2);
         float part = value - index;
         Color a = Stops[index], b = Stops[index + 1];
@@ -60,6 +76,6 @@ internal sealed class WaterfallHistory : IDisposable
                 new RectangleF(sourceX, 0, sourceWidth, rest), GraphicsUnit.Pixel);
     }
 
-    internal void Clear() { Count = 0; head = 0; }
+    internal void Clear() { Count = 0; head = 0; Array.Clear(levels); }
     public void Dispose() => bitmap.Dispose();
 }

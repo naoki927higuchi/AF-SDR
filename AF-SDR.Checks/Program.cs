@@ -12,6 +12,7 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        SettingsChecks.RunAsync().GetAwaiter().GetResult();
         FmChecks.Run();
         if (args.Contains("--audio-smoke"))
         {

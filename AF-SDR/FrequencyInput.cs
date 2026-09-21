@@ -34,5 +34,10 @@ internal static class FrequencyInput
         return true;
     }
 
-    internal static string Format(uint hz) => hz.ToString("N0", CultureInfo.InvariantCulture);
+    internal static string Format(uint hz)
+    {
+        (decimal divisor, string suffix) = hz >= 1_000_000_000 ? (1_000_000_000m, "G")
+            : hz >= 1_000_000 ? (1_000_000m, "M") : hz >= 1000 ? (1000m, "k") : (1m, "");
+        return (hz / divisor).ToString("0.#########", CultureInfo.InvariantCulture) + suffix;
+    }
 }
