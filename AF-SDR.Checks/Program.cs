@@ -80,6 +80,7 @@ internal static class Program
         if (fineArgument >= 0) { fineFolder = args[fineArgument + 1]; args = args.Where((_, n) => n != fineArgument && n != fineArgument + 1).ToArray(); }
         FineTuneChecks.Run(fineFolder);
         DigitalUxChecks.Run();
+        IqTrajectoryChecks.Run();
         using var form = new MainForm(Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json"));
         CreateHandles(form);
         VerifySettingsControls(form);

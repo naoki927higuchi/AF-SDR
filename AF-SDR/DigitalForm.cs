@@ -109,7 +109,7 @@ internal sealed class DigitalForm : Form
             DigitalMode.Ask => "ASK: 2値（OOK）/4値の包絡線振幅と時間波形。搬送波位相には同期しません。",
             DigitalMode.Fsk => "FSK: 2/4値の周波数偏移分布と時間波形。間隔は隣接トーン間のHz値。",
             DigitalMode.Msk => "MSK: h=0.5、周波数偏移±baud/4を表示。GMSK専用の整合処理はありません。",
-            DigitalMode.Iq => "RRC通過後の同期なしI/Q散布図。シンボル判定点ではありません。",
+            DigitalMode.Iq => "RRC＋表示用8 SPS。初期に代表位相を選択。方式固有の判定・搬送波同期・baud追従なし。",
             _ => "RRC＋タイミング同期＋搬送波同期後の実際のI/Q値を表示。"
         }) + "\n緑＝受信値、灰色＋＝基準位置。基準位置への丸め・データ復号は行いません。";
         updating = false; UpdateConstraints();
@@ -216,6 +216,7 @@ internal sealed class DigitalForm : Form
             : $"中心 {FrequencyInput.Format(frequency)} Hz / {Settings.Mode} / {Settings.SymbolRate} baud\n"
                 + (frame is null ? "データ待ち" : measurement + $" / 欠落 {frame.Discontinuities} 回");
         view.Display(Settings.Enabled && connected ? frame?.Points : null, caption, Settings,
-            Settings.Enabled && connected ? frame?.Trace : null);
+            Settings.Enabled && connected ? frame?.Trace : null,
+            Settings.Enabled && connected ? frame?.IqTrajectory : null, frame?.IqSamplesPerSymbol ?? 0);
     }
 }

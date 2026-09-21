@@ -5,9 +5,13 @@ namespace AfSdr;
 internal sealed class ConstellationView : Control
 {
     private PointF[] points = [];
+    private PointF[] iqTrajectory = [];
+    private int iqSamplesPerSymbol;
     private int symbolCount = 256;
     private bool trajectory;
     internal ReadOnlySpan<PointF> DisplayedPoints => points.AsSpan(Math.Max(0, points.Length - symbolCount));
+    internal ReadOnlySpan<PointF> DisplayedTrajectory => settings.Mode == DigitalMode.Iq
+        ? iqTrajectory.AsSpan(Math.Max(0, iqTrajectory.Length - symbolCount * iqSamplesPerSymbol)) : DisplayedPoints;
     internal void SetPresentation(int count, bool showTrajectory)
     {
         if (!DigitalViewSettings.SymbolCounts.Contains(count)) throw new ArgumentOutOfRangeException(nameof(count));
@@ -23,8 +27,9 @@ internal sealed class ConstellationView : Control
         BackColor = Color.FromArgb(13, 22, 32); ForeColor = Color.FromArgb(170, 190, 210);
         Dock = DockStyle.Fill;
     }
-    internal void Display(PointF[]? values, string caption, DigitalSettings? configuration = null, float[]? waveform = null)
+    internal void Display(PointF[]? values, string caption, DigitalSettings? configuration = null, float[]? waveform = null, PointF[]? iqPath = null, int samplesPerSymbol = 0)
     {
+        iqTrajectory = iqPath ?? []; iqSamplesPerSymbol = Math.Clamp(samplesPerSymbol, 0, IqDisplayProcessor.SamplesPerSymbol);
         points = values ?? []; trace = waveform ?? []; settings = configuration ?? new(); Caption = caption; Invalidate();
     }
     protected override void OnPaint(PaintEventArgs e)
@@ -78,9 +83,10 @@ internal sealed class ConstellationView : Control
         if (trajectory)
         {
             using var trail = new Pen(Color.FromArgb(50, 88, 110), 1);
-            for (int n = 1; n < visiblePoints.Length; n++)
+            var path = DisplayedTrajectory;
+            for (int n = 1; n < path.Length; n++)
             {
-                var a = visiblePoints[n - 1]; var b = visiblePoints[n];
+                var a = path[n - 1]; var b = path[n];
                 if (float.IsFinite(a.X) && float.IsFinite(a.Y) && float.IsFinite(b.X) && float.IsFinite(b.Y))
                     g.DrawLine(trail, X(a.X), Y(a.Y), X(b.X), Y(b.Y));
             }

@@ -44,7 +44,7 @@ internal sealed record DigitalSettings(bool Enabled = false, DigitalMode Mode = 
     }
 }
 internal sealed record ConstellationFrame(PointF[] Points, double FrequencyErrorHz, long Symbols, int Discontinuities,
-    float[]? Trace = null, bool CarrierAcquired = true);
+    float[]? Trace = null, bool CarrierAcquired = true, PointF[]? IqTrajectory = null, int IqSamplesPerSymbol = 0);
 
 // Streaming mode-specific channel filtering/detection -> Gardner timing -> visual measurements.
 internal sealed class ConstellationProcessor
@@ -56,6 +56,7 @@ internal sealed class ConstellationProcessor
     internal void SetFineFrequencyOffset(double hz) => fine.SetOffset(hz);
     private readonly double nominalPeriod, workingRate;
     private readonly QamCarrierRecovery? qam;
+    private readonly IqDisplayProcessor? iqDisplay;
     private readonly Queue<float> trace = new();
     private readonly Queue<double> discriminator = new();
     private double discriminatorSum, traceTime, differentialFrequency;
@@ -89,6 +90,7 @@ internal sealed class ConstellationProcessor
             ? Fir.LowPass(63, settings.ChannelCutoff / workingRate)
             : RootRaisedCosine(nominalPeriod, settings.Rolloff), 1);
         if (settings.Mode == DigitalMode.Qam) qam = new QamCarrierRecovery(settings.QamOrder, settings.SymbolRate);
+        if (settings.Mode == DigitalMode.Iq) iqDisplay = new IqDisplayProcessor(workingRate, settings.SymbolRate);
         nextTime = 12 * nominalPeriod;
     }
 
@@ -149,7 +151,7 @@ internal sealed class ConstellationProcessor
             }
             if (settings.Mode == DigitalMode.Iq)
             {
-                if (sampleTime >= nextTime) { Add(input); nextTime += nominalPeriod / 2; }
+                iqDisplay!.Push(input);
             }
             else if (sampleTime >= nextTime)
             {
@@ -218,5 +220,5 @@ internal sealed class ConstellationProcessor
         points.Enqueue(new PointF((float)value.Real, (float)value.Imaginary));
         if (points.Count > 1024) points.Dequeue();
     }
-    internal ConstellationFrame Snapshot(int discontinuities) => new(points.ToArray(), FrequencyErrorHz, symbols, discontinuities, settings.FrequencyMode || settings.Mode == DigitalMode.Ask ? trace.ToArray() : null, qam?.Acquired ?? true);
+    internal ConstellationFrame Snapshot(int discontinuities) => iqDisplay?.Snapshot(discontinuities) ?? new(points.ToArray(), FrequencyErrorHz, symbols, discontinuities, settings.FrequencyMode || settings.Mode == DigitalMode.Ask ? trace.ToArray() : null, qam?.Acquired ?? true);
 }
