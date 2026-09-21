@@ -9,7 +9,7 @@ namespace AfSdr;
 internal sealed class Receiver
 {
     public const uint RequestedRate = 2_048_000;
-    private sealed record State(uint Frequency, uint Rate, ReceiveSettings Settings, int SpectrumRevision, int AudioRevision);
+    private sealed record State(uint Frequency, uint Rate, ReceiveSettings Settings, int SpectrumRevision, int AudioRevision, int DigitalRevision);
     private sealed record Block(long StartByte, byte[] Data, State State);
     private sealed record SpectrumResult(float[] Values, int Revision);
     private readonly IRtlDevice device;
@@ -20,6 +20,14 @@ internal sealed class Receiver
     { SingleReader = true, SingleWriter = true, FullMode = BoundedChannelFullMode.DropOldest });
     private readonly Channel<Block> audioBlocks = Channel.CreateBounded<Block>(new BoundedChannelOptions(4)
     { SingleReader = true, SingleWriter = false, FullMode = BoundedChannelFullMode.DropOldest });
+    private readonly Channel<Block> digitalBlocks = Channel.CreateBounded<Block>(new BoundedChannelOptions(8)
+    { SingleReader = true, SingleWriter = false, FullMode = BoundedChannelFullMode.DropOldest });
+    private sealed record DigitalResult(ConstellationFrame Frame, int Revision);
+    private DigitalResult? digitalResult;
+    private Exception? digitalFailure;
+    private Task digitalProcessing = Task.CompletedTask;
+    internal ConstellationFrame? Constellation => Volatile.Read(ref digitalResult) is { } result && result.Revision == Volatile.Read(ref state)?.DigitalRevision ? result.Frame : null;
+    internal Exception? DigitalFailure => Volatile.Read(ref digitalFailure);
     private State? state;
     private SpectrumResult? spectrum;
     private Task reading = Task.CompletedTask, processing = Task.CompletedTask, audioProcessing = Task.CompletedTask;
@@ -46,6 +54,7 @@ internal sealed class Receiver
     public Exception? AudioFailure => Volatile.Read(ref audioFailure);
     public long ReceivedBytes => Interlocked.Read(ref receivedBytes);
     internal int SpectrumRevision => Volatile.Read(ref state)?.SpectrumRevision ?? 0;
+    internal int DigitalRevision => Volatile.Read(ref state)?.DigitalRevision ?? 0;
     internal int AudioRevision => Volatile.Read(ref state)?.AudioRevision ?? 0;
     public float Volume
     {
@@ -79,10 +88,11 @@ internal sealed class Receiver
                 device.Open(index); opened = true;
                 var actual = device.Configure(frequency, settings);
                 SupportedGains = actual.Gains; AppliedGain = actual.Gain;
-                Volatile.Write(ref state, new State(actual.Frequency, actual.Rate, settings with { ManualGain = actual.Gain }, 1, 1));
+                Volatile.Write(ref state, new State(actual.Frequency, actual.Rate, settings with { ManualGain = actual.Gain }, 1, 1, 1));
             });
             processing = Task.Run(ProcessSpectrumAsync);
             audioProcessing = Task.Run(ProcessAudioAsync);
+            digitalProcessing = Task.Run(ProcessDigitalAsync);
             StartStream();
         }
         catch { device.Close(); opened = false; throw; }
@@ -112,12 +122,17 @@ internal sealed class Receiver
                 SupportedGains = actual.Gains; AppliedGain = actual.Gain;
             }
             var next = new State(actualFrequency, actualRate, settings,
-                previous.SpectrumRevision + (change.Spectrum ? 1 : 0), previous.AudioRevision + (change.Audio ? 1 : 0));
+                previous.SpectrumRevision + (change.Spectrum ? 1 : 0), previous.AudioRevision + (change.Audio ? 1 : 0), previous.DigitalRevision + (change.Digital ? 1 : 0));
             Volatile.Write(ref state, next);
             if (change.Audio)
             {
                 Volatile.Write(ref audioFailure, null);
                 audioBlocks.Writer.TryWrite(new Block(ReceivedBytes, [], next));
+            }
+            if (change.Digital)
+            {
+                Volatile.Write(ref digitalFailure, null);
+                digitalBlocks.Writer.TryWrite(new Block(ReceivedBytes, [], next));
             }
             if (change.Hardware) StartStream();
             return change;
@@ -204,6 +219,47 @@ internal sealed class Receiver
         finally { Volatile.Write(ref audioOutput, null); output?.Dispose(); }
     }
 
+    private async Task ProcessDigitalAsync()
+    {
+        ConstellationProcessor? dsp = null;
+        int revision = -1, failedRevision = -1, discontinuities = 0;
+        long expected = 0, lastPublished = 0;
+        try
+        {
+            await foreach (var block in digitalBlocks.Reader.ReadAllAsync(stop.Token))
+            {
+                if (block.State.DigitalRevision != Volatile.Read(ref state)!.DigitalRevision || block.State.DigitalRevision == failedRevision) continue;
+                if (!block.State.Settings.DigitalOptions.Enabled) { dsp = null; continue; }
+                try
+                {
+                    if (revision != block.State.DigitalRevision || expected != block.StartByte)
+                    {
+                        if (revision == block.State.DigitalRevision) discontinuities++; else discontinuities = 0;
+                        dsp = new ConstellationProcessor(block.State.Rate, block.State.Settings.DigitalOptions);
+                        revision = block.State.DigitalRevision;
+                        Volatile.Write(ref digitalResult, null);
+                    }
+                    expected = block.StartByte + block.Data.Length;
+                    dsp!.Process(block.Data);
+                    long now = Environment.TickCount64;
+                    if (now - lastPublished >= 40)
+                    {
+                        Volatile.Write(ref digitalResult, new DigitalResult(dsp.Snapshot(discontinuities), revision));
+                        lastPublished = now;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    failedRevision = block.State.DigitalRevision;
+                    dsp = null;
+                    Volatile.Write(ref digitalResult, null);
+                    Volatile.Write(ref digitalFailure, ex);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
+    }
+
     private void StartStream()
     {
         Volatile.Write(ref streamStopping, 0);
@@ -221,6 +277,7 @@ internal sealed class Receiver
                     var block = new Block(end - data.Length, data, current);
                     blocks.Writer.TryWrite(block);
                     audioBlocks.Writer.TryWrite(block);
+                    if (current.Settings.DigitalOptions.Enabled) digitalBlocks.Writer.TryWrite(block);
                 }
                 catch (Exception ex) { Volatile.Write(ref failure, ex); device.Cancel(); }
             };
@@ -254,8 +311,8 @@ internal sealed class Receiver
         {
             stop.Cancel(); Volume = 0;
             await StopStreamAsync();
-            blocks.Writer.TryComplete(); audioBlocks.Writer.TryComplete();
-            await Task.WhenAll(processing, audioProcessing);
+            blocks.Writer.TryComplete(); audioBlocks.Writer.TryComplete(); digitalBlocks.Writer.TryComplete();
+            await Task.WhenAll(processing, audioProcessing, digitalProcessing);
             if (opened) { device.Close(); opened = false; }
         }
         finally { operations.Release(); }

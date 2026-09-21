@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Text.Json;
 using AfSdr.Dsp;
 
@@ -17,7 +17,7 @@ internal static class PersistenceChecks
                 WindowBounds = new Rectangle(-1500, 120, 1100, 850), Maximized = true,
                 Frequency = 78_400_001, SampleRate = 1_024_000, ManualGain = true, Gain = 197,
                 DisplayBandwidth = 500_000, FftSize = 16384, Window = FftWindow.BlackmanHarris,
-                LevelLower = -90, LevelUpper = -20, RxBandwidth = 150_000, ShowRxBandwidth = false, Volume = 47
+                LevelLower = -90, LevelUpper = -20, RxBandwidth = 150_000, ShowRxBandwidth = false, Volume = 47, Digital = new DigitalSettings(false, DigitalMode.Bpsk, 19200, 0.5)
             };
             SettingsStore.Save(path, settings);
             Require(SettingsStore.Load(path, out _) == settings, "Every setting survives JSON round trip");

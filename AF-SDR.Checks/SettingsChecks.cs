@@ -55,11 +55,24 @@ internal static class SettingsChecks
             await Until(() => audio.Writes > 2);
             Require(receiver.SpectrumRevision == specRevision && device.Configures == 1, "FM ON preserves FFT / device");
             int audioRevision = receiver.AudioRevision, clears = audio.Clears;
+            settings = settings with { Digital = new DigitalSettings(true) };
+            await receiver.UpdateAsync(80_000_000, settings);
+            await Until(() => receiver.Constellation is not null);
+            Require(receiver.AudioRevision == audioRevision && receiver.SpectrumRevision == specRevision && device.Configures == 1,
+                "Digital ON preserves device, FFT and audio");
+            int digitalRevision = receiver.DigitalRevision;
             settings = settings with { FftSize = 16384, Window = FftWindow.BlackmanHarris };
             await receiver.UpdateAsync(80_000_000, settings);
             await Until(() => receiver.Spectrum?.Length == 16384);
             Require(receiver.AudioRevision == audioRevision && audio.Clears == clears && audioOpens == 1 && device.Configures == 1,
                 "FFT update preserves FM state / audio output / device");
+            Require(receiver.DigitalRevision == digitalRevision, "FFT changes preserve digital synchronization");
+            settings = settings with { Digital = new DigitalSettings(true, DigitalMode.Bpsk, 4800) };
+            await receiver.UpdateAsync(80_000_000, settings);
+            Require(receiver.AudioRevision == audioRevision && device.Configures == 1, "Digital mode/baud changes preserve audio and USB");
+            settings = settings with { Digital = settings.Digital! with { Enabled = false } };
+            await receiver.UpdateAsync(80_000_000, settings);
+            Require(receiver.Constellation is null, "Digital OFF hides stale results");
             specRevision = receiver.SpectrumRevision;
             settings = settings with { RxBandwidth = 150_000 };
             await receiver.UpdateAsync(80_000_000, settings);

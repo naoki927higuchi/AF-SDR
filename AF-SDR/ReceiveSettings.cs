@@ -1,8 +1,9 @@
 namespace AfSdr;
 
 internal sealed record ReceiveSettings(uint SampleRate, int? ManualGain = null, int FftSize = Dsp.SpectrumProcessor.DefaultSize,
-    bool FmEnabled = false, Dsp.FftWindow Window = Dsp.FftWindow.Hann, uint RxBandwidth = 200_000)
+    bool FmEnabled = false, Dsp.FftWindow Window = Dsp.FftWindow.Hann, uint RxBandwidth = 200_000, Dsp.DigitalSettings? Digital = null)
 {
+    internal Dsp.DigitalSettings DigitalOptions => Digital ?? new();
     internal static readonly uint[] RxBandwidths = [100_000, 120_000, 150_000, 180_000, 200_000, 220_000, 240_000];
     // RTL-SDR Blog 1.4.0 rtl-sdr.h: 225001..300000 or 900001..3200000.
     internal static readonly uint[] Rates = [250_000, 300_000, 1_000_000, 1_024_000, 1_400_000,
@@ -12,6 +13,7 @@ internal sealed record ReceiveSettings(uint SampleRate, int? ManualGain = null, 
         ? supported.MinBy(gain => Math.Abs((long)gain - value)) : null;
     internal void Validate()
     {
+        DigitalOptions.Validate(SampleRate);
         if (!ValidRate(SampleRate)) throw new ArgumentOutOfRangeException(nameof(SampleRate));
         if (!Dsp.SpectrumProcessor.SupportedSizes.Contains(FftSize)) throw new ArgumentOutOfRangeException(nameof(FftSize));
         if (!Enum.IsDefined(Window)) throw new ArgumentOutOfRangeException(nameof(Window));
@@ -19,13 +21,14 @@ internal sealed record ReceiveSettings(uint SampleRate, int? ManualGain = null, 
     }
 }
 
-internal readonly record struct SettingsChange(bool Hardware, bool Spectrum, bool Audio)
+internal readonly record struct SettingsChange(bool Hardware, bool Spectrum, bool Audio, bool Digital = false)
 {
     internal static SettingsChange Between(uint oldFrequency, ReceiveSettings old, uint frequency, ReceiveSettings next)
     {
         bool hardware = oldFrequency != frequency || old.SampleRate != next.SampleRate || old.ManualGain != next.ManualGain;
         return new(hardware, hardware || old.FftSize != next.FftSize || old.Window != next.Window,
-            hardware || old.FmEnabled != next.FmEnabled || old.RxBandwidth != next.RxBandwidth);
+            hardware || old.FmEnabled != next.FmEnabled || old.RxBandwidth != next.RxBandwidth,
+            hardware || old.DigitalOptions != next.DigitalOptions);
     }
 }
 

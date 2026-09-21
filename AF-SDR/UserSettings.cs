@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using AfSdr.Dsp;
 
 namespace AfSdr;
@@ -19,6 +19,7 @@ internal sealed record UserSettings
     public decimal LevelUpper { get; init; }
     public uint RxBandwidth { get; init; } = 200_000;
     public bool ShowRxBandwidth { get; init; } = true;
+    public DigitalSettings? Digital { get; init; } = new();
     public int Volume { get; init; } = 30;
 
     internal UserSettings Validated()
@@ -37,7 +38,11 @@ internal sealed record UserSettings
             LevelLower = levelsValid ? LevelLower : defaults.LevelLower,
             LevelUpper = levelsValid ? LevelUpper : defaults.LevelUpper,
             RxBandwidth = ReceiveSettings.RxBandwidths.Contains(RxBandwidth) ? RxBandwidth : defaults.RxBandwidth,
-            Volume = Math.Clamp(Volume, 0, 100)
+            Volume = Math.Clamp(Volume, 0, 100),
+            Digital = new DigitalSettings(false,
+                Digital is not null && Enum.IsDefined(Digital.Mode) ? Digital.Mode : DigitalMode.Qpsk,
+                Math.Clamp(Digital?.SymbolRate ?? 9600, 1000, (int)Math.Min(100000, rate / 8)),
+                new[] { 0.2, 0.35, 0.5, 1.0 }.Contains(Digital?.Rolloff ?? 0.35) ? Digital?.Rolloff ?? 0.35 : 0.35)
         };
     }
 }

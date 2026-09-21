@@ -27,6 +27,7 @@ internal sealed class MainForm : Form
     };
     private readonly ErrorProvider frequencyError = new() { BlinkStyle = ErrorBlinkStyle.NeverBlink };
     private readonly SpectrumView spectrum = new();
+    private readonly DigitalForm digitalForm;
     private readonly Label status = new() { AutoSize = true, Text = "未接続", Margin = new Padding(12, 8, 12, 8) };
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 40 };
     private Receiver? receiver;
@@ -45,6 +46,9 @@ internal sealed class MainForm : Form
     {
         this.settingsPath = settingsPath ?? SettingsStore.DefaultPath;
         savedSettings = SettingsStore.Load(this.settingsPath, out loadError);
+        digitalForm = new DigitalForm(savedSettings.Digital ?? new());
+        digitalForm.SetSampleRate(savedSettings.SampleRate);
+        digitalForm.SettingsChanged += ApplyReceiverSettingsAsync;
         lastFrequency = savedSettings.Frequency;
         Text = "AF-SDR";
         ClientSize = new Size(1280, 960);
@@ -79,6 +83,9 @@ internal sealed class MainForm : Form
         var levelRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(10, 0, 10, 8) };
         levelRow.Controls.AddRange([SettingLabel("表示レベル（スペクトラム＋色） 下限"), levelLower,
             SettingLabel("上限"), levelUpper, SettingLabel("dBFS / FFT bin    RxBW＝復調帯域・表示帯域とは別")]);
+        var constellationButton = new Button { Text = "コンスタレーション…", AutoSize = true };
+        constellationButton.Click += (_, _) => { if (!digitalForm.Visible) digitalForm.Show(this); else digitalForm.Activate(); };
+        levelRow.Controls.Add(constellationButton);
         foreach (uint rate in ReceiveSettings.Rates)
             sampleRate.Items.Add(new RateOption(rate, $"{rate / 1e6:0.###} MS/s" + (rate > 2_400_000 ? " ※欠落の可能性" : "")));
         sampleRate.SelectedIndex = Array.IndexOf(ReceiveSettings.Rates, Receiver.RequestedRate);
@@ -147,7 +154,7 @@ internal sealed class MainForm : Form
         };
         Resize += (_, _) => { if (WindowState != FormWindowState.Minimized) lastMaximized = WindowState == FormWindowState.Maximized; };
         FormClosing += OnClosing;
-        FormClosed += (_, _) => { timer.Dispose(); frequencyError.Dispose(); };
+        FormClosed += (_, _) => { timer.Dispose(); frequencyError.Dispose(); digitalForm.Dispose(); };
         SetControls();
     }
 
@@ -204,7 +211,8 @@ internal sealed class MainForm : Form
             FftSize = (int)fftSize.SelectedItem!, Window = (Dsp.FftWindow)fftWindow.SelectedItem!,
             LevelLower = levelLower.Value, LevelUpper = levelUpper.Value,
             RxBandwidth = ((RateOption)rxBandwidth.SelectedItem!).Hertz,
-            ShowRxBandwidth = showRxBandwidth.Checked, Volume = volume.Value
+            ShowRxBandwidth = showRxBandwidth.Checked, Volume = volume.Value,
+            Digital = digitalForm.Settings with { Enabled = false }
         };
     }
 
@@ -224,6 +232,7 @@ internal sealed class MainForm : Form
     private async Task ApplyReceiverSettingsAsync()
     {
         if (busy || closing || updatingSettings) return;
+        digitalForm.SetSampleRate(((RateOption)sampleRate.SelectedItem!).Hertz);
         if (receiver is null)
         {
             spectrum.RxBandwidth = ((RateOption)rxBandwidth.SelectedItem!).Hertz;
@@ -288,9 +297,10 @@ internal sealed class MainForm : Form
             return;
         }
         frequencyError.SetError(frequency, string.Empty);
+        digitalForm.SetSampleRate(((RateOption)sampleRate.SelectedItem!).Hertz);
         var settings = new ReceiveSettings(((RateOption)sampleRate.SelectedItem!).Hertz,
             gainMode.SelectedIndex == 1 ? (rfGain.SelectedItem as GainOption)?.TenthsDb : null, (int)fftSize.SelectedItem!, fmEnabled.Checked,
-            (Dsp.FftWindow)fftWindow.SelectedItem!, ((RateOption)rxBandwidth.SelectedItem!).Hertz);
+            (Dsp.FftWindow)fftWindow.SelectedItem!, ((RateOption)rxBandwidth.SelectedItem!).Hertz, digitalForm.Settings);
         busy = true;
         SetControls();
         try
@@ -337,6 +347,7 @@ internal sealed class MainForm : Form
             receiver = null;
         }
         spectrum.Clear();
+        digitalForm.Display(null, lastFrequency, null, false);
     }
 
     private async Task UpdateDisplayAsync()
@@ -352,6 +363,7 @@ internal sealed class MainForm : Form
         long bytes = receiver.ReceivedBytes;
         if (bytes != lastBytes) { lastBytes = bytes; lastData = DateTime.UtcNow; }
         spectrum.DisplayFrame(receiver.Spectrum);
+        if (digitalForm.Visible) digitalForm.Display(receiver.Constellation, receiver.Frequency, receiver.DigitalFailure, true);
         audioStatus.Text = receiver.AudioFailure is { } audioError ? $"FM音声エラー: {audioError.Message}"
             : fmEnabled.Checked ? "FM ON / 48 kHz" : "FM OFF";
         status.Text = (DateTime.UtcNow - lastData).TotalSeconds > 3
@@ -364,6 +376,7 @@ internal sealed class MainForm : Form
     private void SetControls()
     {
         bool enabled = !busy && !closing;
+        digitalForm.Enabled = enabled;
         connect.Enabled = enabled && (receiver is not null || devices.SelectedIndex >= 0);
         connect.Text = receiver is null ? "接続" : "切断";
         refresh.Enabled = devices.Enabled = enabled && receiver is null;
