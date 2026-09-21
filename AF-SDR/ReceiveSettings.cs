@@ -28,7 +28,7 @@ internal readonly record struct SettingsChange(bool Hardware, bool Spectrum, boo
         bool hardware = oldFrequency != frequency || old.SampleRate != next.SampleRate || old.ManualGain != next.ManualGain;
         return new(hardware, hardware || old.FftSize != next.FftSize || old.Window != next.Window,
             hardware || old.FmEnabled != next.FmEnabled || old.RxBandwidth != next.RxBandwidth,
-            hardware || old.DigitalOptions != next.DigitalOptions);
+            hardware || old.DigitalOptions.RequiresReset(next.DigitalOptions));
     }
 }
 

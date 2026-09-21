@@ -75,6 +75,10 @@ internal static class Program
         int goldenArgument = Array.IndexOf(args, "--generator-golden");
         if (goldenArgument >= 0) { goldenFolder = args[goldenArgument + 1]; args = args.Where((_, n) => n != goldenArgument && n != goldenArgument + 1).ToArray(); }
         GeneratorChecks.Run(goldenFolder);
+        string? fineFolder = null;
+        int fineArgument = Array.IndexOf(args, "--fine-tune-samples");
+        if (fineArgument >= 0) { fineFolder = args[fineArgument + 1]; args = args.Where((_, n) => n != fineArgument && n != fineArgument + 1).ToArray(); }
+        FineTuneChecks.Run(fineFolder);
         using var form = new MainForm(Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json"));
         CreateHandles(form);
         VerifySettingsControls(form);

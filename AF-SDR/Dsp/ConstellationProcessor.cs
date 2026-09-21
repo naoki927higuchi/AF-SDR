@@ -5,8 +5,10 @@ namespace AfSdr.Dsp;
 // Append values to preserve 1.8.0 JSON enum values.
 internal enum DigitalMode { Iq, Bpsk, Qpsk, Qam, Pi4Qpsk, Ask, Fsk, Msk }
 internal sealed record DigitalSettings(bool Enabled = false, DigitalMode Mode = DigitalMode.Qpsk, int SymbolRate = 9600, double Rolloff = 0.35,
-    int QamOrder = 16, int AskOrder = 2, int FskOrder = 2, double FskSpacing = 4800)
+    int QamOrder = 16, int AskOrder = 2, int FskOrder = 2, double FskSpacing = 4800, double FineFrequencyOffset = 0)
 {
+    internal const double MaximumFineOffset = 10000;
+    internal bool RequiresReset(DigitalSettings next) => this with { FineFrequencyOffset = next.FineFrequencyOffset } != next;
     internal bool FrequencyMode => Mode is DigitalMode.Fsk or DigitalMode.Msk;
     internal double Spacing => Mode == DigitalMode.Msk ? SymbolRate / 2.0 : FskSpacing;
     internal int Tones => Mode == DigitalMode.Msk ? 2 : FskOrder;
@@ -18,6 +20,7 @@ internal sealed record DigitalSettings(bool Enabled = false, DigitalMode Mode = 
         var result = this with
         {
             Enabled = false,
+            FineFrequencyOffset = double.IsFinite(FineFrequencyOffset) ? Math.Round(Math.Clamp(FineFrequencyOffset, -MaximumFineOffset, MaximumFineOffset), 1) : 0,
             Mode = Enum.IsDefined(Mode) ? Mode : DigitalMode.Qpsk,
             SymbolRate = Math.Clamp(SymbolRate, 1000, (int)Math.Min(100000, rate / 8)),
             Rolloff = new[] { 0.2, 0.35, 0.5, 1.0 }.Contains(Rolloff) ? Rolloff : 0.35,
@@ -30,6 +33,8 @@ internal sealed record DigitalSettings(bool Enabled = false, DigitalMode Mode = 
     }
     internal void Validate(uint rate)
     {
+        if (!double.IsFinite(FineFrequencyOffset) || Math.Abs(FineFrequencyOffset) > MaximumFineOffset)
+            throw new ArgumentException("手動周波数補正は −10000.0 ～ +10000.0 Hz で指定してください。");
         if (!Enum.IsDefined(Mode) || SymbolRate < 1000 || SymbolRate > Math.Min(100000, rate / 8)
             || !new[] { 0.2, 0.35, 0.5, 1.0 }.Contains(Rolloff)
             || QamOrder is not (16 or 64) || AskOrder is not (2 or 4) || FskOrder is not (2 or 4)
@@ -47,6 +52,8 @@ internal sealed class ConstellationProcessor
     private readonly List<ComplexFir> decimators = [];
     private readonly ComplexFir matched;
     private readonly DigitalSettings settings;
+    private readonly FineFrequencyShifter fine;
+    internal void SetFineFrequencyOffset(double hz) => fine.SetOffset(hz);
     private readonly double nominalPeriod, workingRate;
     private readonly QamCarrierRecovery? qam;
     private readonly Queue<float> trace = new();
@@ -69,6 +76,8 @@ internal sealed class ConstellationProcessor
     {
         settings.Validate(rate);
         this.settings = settings;
+        fine = new FineFrequencyShifter(rate);
+        fine.SetOffset(settings.FineFrequencyOffset);
         workingRate = rate;
         while (workingRate >= 16 * settings.SymbolRate && settings.ChannelCutoff <= workingRate * 0.2)
         {
@@ -111,6 +120,7 @@ internal sealed class ConstellationProcessor
         for (int n = 0; n < iq.Length; n += 2)
         {
             float i = iq[n], q = iq[n + 1];
+            fine.Shift(ref i, ref q);
             bool ready = true;
             foreach (var stage in decimators)
                 if (!stage.Push(i, q, out i, out q)) { ready = false; break; }

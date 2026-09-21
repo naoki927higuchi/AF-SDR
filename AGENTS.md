@@ -10,6 +10,7 @@
 - 製品バージョンの設定元は `AF-SDR/AF-SDR.csproj` の `Version`。成果物と履歴のバージョンを一致させる。
 - .NETのAssemblyVersion/FileVersionは4桁の内部メタデータであり、利用者向けバージョンには3桁のVersion/InformationalVersionを使用する。
 - 検証は `dotnet build AF-SDR.sln -c Release` と `dotnet run --project AF-SDR.Checks -c Release --no-build`。後者はハードウェアを開かない。
+- AF-SDR 1.11.0以降のReleaseは `AF-SDR/bin/Release-<Version>/` へ直接出力する。旧 `Release/net9.0-windows` は更新しない。回答のEXEリンクはバージョン付きフォルダーを指すこと。
 
 ## AF-SignalGenerator
 

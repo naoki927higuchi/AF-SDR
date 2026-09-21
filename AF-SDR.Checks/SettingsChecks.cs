@@ -61,6 +61,11 @@ internal static class SettingsChecks
             Require(receiver.AudioRevision == audioRevision && receiver.SpectrumRevision == specRevision && device.Configures == 1,
                 "Digital ON preserves device, FFT and audio");
             int digitalRevision = receiver.DigitalRevision;
+            settings = settings with { Digital = settings.Digital! with { FineFrequencyOffset = 100.1 } };
+            var fineChange = await receiver.UpdateAsync(80_000_000, settings);
+            Require(fineChange == new SettingsChange(false, false, false, false) && receiver.DigitalRevision == digitalRevision
+                && receiver.AudioRevision == audioRevision && receiver.SpectrumRevision == specRevision && device.Configures == 1 && audio.Clears == clears,
+                "Fine tuning preserves every revision, native device and audio queue");
             settings = settings with { FftSize = 16384, Window = FftWindow.BlackmanHarris };
             await receiver.UpdateAsync(80_000_000, settings);
             await Until(() => receiver.Spectrum?.Length == 16384);

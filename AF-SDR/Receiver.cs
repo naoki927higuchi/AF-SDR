@@ -240,7 +240,8 @@ internal sealed class Receiver : IReceiver
                         Volatile.Write(ref digitalResult, null);
                     }
                     expected = block.StartByte + block.Data.Length;
-                    dsp!.Process(block.Data);
+                    dsp!.SetFineFrequencyOffset(Volatile.Read(ref state)!.Settings.DigitalOptions.FineFrequencyOffset);
+                    dsp.Process(block.Data);
                     long now = Environment.TickCount64;
                     if (now - lastPublished >= 40)
                     {

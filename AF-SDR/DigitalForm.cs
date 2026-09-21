@@ -8,6 +8,7 @@ internal sealed class DigitalForm : Form
     private readonly ComboBox rolloff = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 75 };
     private readonly ComboBox order = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 75 };
     private readonly NumericUpDown spacing = new() { Minimum = 100, Maximum = 500000, Increment = 100, DecimalPlaces = 1, Width = 110 };
+    private readonly DigitTuningControl fine = new(-10000m, 10000m);
     private readonly Button apply = new() { Text = "適用", AutoSize = true };
     private readonly Label description = new() { AutoSize = true, Dock = DockStyle.Fill, Padding = new Padding(8) };
     private readonly ConstellationView view = new();
@@ -26,19 +27,32 @@ internal sealed class DigitalForm : Form
         mode.SelectedIndex = (int)Settings.Mode;
         foreach (double value in new[] { 0.2, 0.35, 0.5, 1.0 }) rolloff.Items.Add(value);
         rolloff.SelectedItem = Settings.Rolloff; baud.Value = Settings.SymbolRate;
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4 };
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5 };
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         description.MaximumSize = new Size(ClientSize.Width - 20, 0);
         Resize += (_, _) => description.MaximumSize = new Size(Math.Max(200, ClientSize.Width - 20), 0);
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var row = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(8) };
         row.Controls.AddRange([enabled, mode, new Label { Text = "baud", AutoSize = true }, baud, new Label { Text = "RRC α", AutoSize = true }, rolloff, apply]);
         var options = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(8, 0, 8, 0) };
         options.Controls.AddRange([new Label { Text = "多値数", AutoSize = true }, order,
             new Label { Text = "FSK隣接トーン間隔 Hz", AutoSize = true }, spacing]);
-        root.Controls.Add(row, 0, 0); root.Controls.Add(options, 0, 1); root.Controls.Add(description, 0, 2);
-        root.Controls.Add(view, 0, 3); Controls.Add(root);
+        var tuning = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(8, 0, 8, 0) };
+        tuning.Controls.AddRange([new Label { Text = "手動周波数補正", AutoSize = true, Margin = new Padding(3, 10, 3, 3) }, fine,
+            new Label { Text = "＋偏差を＋値で除去（±10 kHz）。0IF基準／即時反映／デジタル解析のみ。", AutoSize = true }]);
+        fine.Value = (decimal)Settings.FineFrequencyOffset;
+        fine.ValueChanged += async (_, _) =>
+        {
+            if (updating) return;
+            bool restoreFocus = fine.DigitFocused;
+            Settings = Settings with { FineFrequencyOffset = (double)fine.Value };
+            if (SettingsChanged is not null) await SettingsChanged();
+            if (restoreFocus) fine.RestoreDigitFocus();
+        };
+        root.Controls.Add(tuning, 0, 2);
+        root.Controls.Add(row, 0, 0); root.Controls.Add(options, 0, 1); root.Controls.Add(description, 0, 3);
+        root.Controls.Add(view, 0, 4); Controls.Add(root);
         ConfigureMode();
         mode.SelectedIndexChanged += (_, _) => ConfigureMode();
         baud.ValueChanged += (_, _) => UpdateConstraints();
@@ -93,7 +107,7 @@ internal sealed class DigitalForm : Form
             selected == DigitalMode.Qam ? (int)order.SelectedItem! : Settings.QamOrder,
             selected == DigitalMode.Ask ? (int)order.SelectedItem! : Settings.AskOrder,
             selected == DigitalMode.Fsk ? (int)order.SelectedItem! : Settings.FskOrder,
-            selected == DigitalMode.Fsk ? (double)spacing.Value : Settings.FskSpacing);
+            selected == DigitalMode.Fsk ? (double)spacing.Value : Settings.FskSpacing, Settings.FineFrequencyOffset);
         Settings = Settings.Normalize(sampleRate) with { Enabled = enabled.Checked };
         if (SettingsChanged is not null) await SettingsChanged();
     }
@@ -111,14 +125,15 @@ internal sealed class DigitalForm : Form
         rolloff.SelectedItem = settings.Rolloff;
         ConfigureMode();
         updating = true;
-        try { enabled.Checked = settings.Enabled; }
+        try { enabled.Checked = settings.Enabled; fine.Value = (decimal)settings.FineFrequencyOffset; }
         finally { updating = false; }
     }
     internal void Display(ConstellationFrame? frame, uint frequency, Exception? error, bool connected)
     {
         string measurement = Settings.FrequencyMode ? $"トーン間隔 {Settings.Spacing:0.#} Hz / 周波数偏移表示"
             : Settings.Mode == DigitalMode.Ask ? "包絡線振幅（非コヒーレント）"
-            : frame?.CarrierAcquired == false ? "搬送波取得中…" : $"周波数補正推定 {frame?.FrequencyErrorHz ?? 0:0.0} Hz（ロック判定なし）";
+            : Settings.Mode == DigitalMode.Iq ? "同期なし（残差推定なし）"
+            : frame?.CarrierAcquired == false ? "搬送波取得中…" : $"推定残差（手動補正後） {frame?.FrequencyErrorHz ?? 0:0.0} Hz（ロック判定なし）";
         string caption = !connected ? "未接続" : !Settings.Enabled ? "デジタル信号表示 OFF"
             : error is not null ? "処理エラー: " + error.Message
             : $"中心 {FrequencyInput.Format(frequency)} Hz / {Settings.Mode} / {Settings.SymbolRate} baud\n"

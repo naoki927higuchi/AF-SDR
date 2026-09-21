@@ -9,9 +9,13 @@
     <AssemblyName>AF-SDR</AssemblyName>
     <RootNamespace>AfSdr</RootNamespace>
     <Product>AF-SDR</Product>
-    <Version>1.10.0</Version>
+    <Version>1.11.0</Version>
     <InformationalVersion>$(Version)</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <OutputPath>bin\Release-$(Version)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
   </PropertyGroup>
   <ItemGroup>
     <None Include="..\..\Lib\RTL-SDR-BLOG Windows Release V1.4.0\x64\*.dll" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

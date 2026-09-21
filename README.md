@@ -4,7 +4,7 @@ C# / .NET 9 / WinForms / Windows x64 の最小構成RTL-SDRスペクトラム表
 
 ## AF-SignalGenerator（独立EXE）
 
-同じAF-SDR.slnに、既知のデジタル変調IQ WAVを生成するAF-SignalGenerator 1.0.0を追加しました。Releaseビルド後、`AF-SignalGenerator/bin/Release/net9.0-windows/AF-SignalGenerator.exe` で単独起動できます。AF-SDR本体のバージョンは1.10.0です。
+同じAF-SDR.slnに、既知のデジタル変調IQ WAVを生成するAF-SignalGenerator 1.0.0を追加しました。Releaseビルド後、`AF-SignalGenerator/bin/Release/net9.0-windows/AF-SignalGenerator.exe` で単独起動できます。AF-SDR本体のバージョンは1.11.0です。
 
 [生成器の使い方・数式・JSON仕様・検証結果](AF-SignalGenerator/SIGNAL-MODEL.md)。GoldenはQPSK / 100 MHz / 9600 baud / α=.35 / 250 kS/s / −20 dBFS / 10秒。Generateで作ったWAVをAF-SDRのIQファイル入力で開き、デジタル表示をQPSK・9600 baud・α=.35に設定すると確認できます。FM音声はOFFにしてください。
 
@@ -15,7 +15,7 @@ C# / .NET 9 / WinForms / Windows x64 の最小構成RTL-SDRスペクトラム表
 ```powershell
 cd W:\dev\AF-SDR
 dotnet build AF-SDR.sln -c Release
-.\AF-SDR\bin\Release\net9.0-windows\AF-SDR.exe
+.\AF-SDR\bin\Release-1.11.0\AF-SDR.exe
 ```
 
 1. デバイスを選択します。必要なら「再検索」を押します。
@@ -28,6 +28,24 @@ dotnet build AF-SDR.sln -c Release
 `k/K`は千倍、`M/m`は百万倍、`G/g`は十億倍です（周波数入力の便宜上、mもMHzとして扱います）。接頭語なしはHzです。`78.4 MHz`、`500 KHZ`、`78,400,000`も入力できます。小数点はピリオド、カンマは3桁区切りとして扱います。設定成功後も `78.4M`、`8.4M`、`500k` のようにSI接頭語で表示します。整数Hzの精度は維持します。
 
 入力範囲は1～4,294,967,295 Hzで、Hzに換算して整数になる値を受け付けます。不正入力は入力欄のエラーアイコンに表示し、受信・履歴を維持します。実際に受信できる範囲はドングルに依存し、設定エラーは画面下部に表示します。周波数変更時はUSBストリームを一旦停止しますが、デバイス接続は維持します。古い周波数のデータとFFT平均値・表示履歴は破棄します。
+
+## デジタル表示のFine Tune（1.11.0）
+
+コンスタレーション画面の「手動周波数補正」は±10,000.0 Hz、0.1 Hz単位です。任意の数字を左クリックすると青く選択され、ホイールまたは▲/▼でその桁単位に増減します。矢印の左右で桁移動、上下で増減もできます。「直接入力」（またはダブルクリック/F2）では符号付きHzを入力し、Enterまたはフォーカス移動で確定します。Escで入力を取り消します。変更は即時反映され、上段の「適用」は不要です。不正値は拒否し、赤い入力欄と説明を表示します。
+
+**信号の＋100 Hz偏差を除去する値は＋100.0 Hzです。** デジタルIQへ `z[n] × exp(-jφ[n])`、`φ[n+1] = φ[n] + 2π × 手動補正 / Fs` を適用します。位相はサンプルごとに積算し、ブロック境界・表示更新・補正値変更でも連続します。処理順は、既存の親側入力／選局 → 手動NCO → デジタル間引き／チャネル・整合フィルター → 既存のタイミング／搬送波処理 → 表示です。共有IQ配列を書き換えないため、FM・スペクトラムには補正が入りません。デジタル画面独自のFcはなく、基準は親側の0IFのままです。
+
+BPSK/QPSK/QAM/π/4 QPSKの「推定残差（手動補正後）」は既存DSPの推定値であり、手動設定値とは別です。既存の自動搬送波同期を維持するため、＋100 HzのQPSKでも手動補正0の状態から4点に収束する場合があります。回転だけでなく推定残差が0 Hzに近づくことを見て追い込んでください。I/Q・ASK・FSK・MSKには元々の搬送波残差推定がなく、架空の推定値は表示しません。
+
+手動補正のみの変更ではNCO位相、フィルター、タイミング・搬送波同期、表示点履歴、FFT・ウォーターフォール、FM・音声キュー、再生位置を維持します。ライブでは次のデジタル処理ブロック、ファイルでは次の処理ブロックから反映し、表示は既存の約40 ms周期です。記録帯域からはみ出る補正は拒否します。サンプル欠落、切断、シーク、ループ、方式・baud等の変更では従来どおり必要なDSPを再初期化します。補正値は終了時に保存・復元しますが、表示ONや受信・再生の自動開始は復元しません。
+
+新版EXEと同じフォルダーの `FineTuneSamples/Golden` と `FineTuneSamples/OffsetPlus100Hz` に、未変更のAF-SignalGenerator 1.0.0で生成した10秒のQPSK WAVとJSONを同梱しています。親側100 MHz、QPSK／9600 baud／RRC .35、FM OFFで再生し、必要ならループを有効にしてください。＋100 Hzファイルでは、補正99／100／101 Hzの順で残差が約＋1／0／−1 Hzになります。試験用ファイルは次のコマンドで再生成できます。
+
+```powershell
+dotnet run --project AF-SDR.Checks -c Release --no-build -- --fine-tune-samples .\AF-SDR\bin\Release-1.11.0\FineTuneSamples
+```
+
+Release成果物は今後 `AF-SDR/bin/Release-<Version>/` に直接出力します。従来の `Release/net9.0-windows` は更新しません。
 
 ## IQ WAVファイルの再生（1.10.0）
 
@@ -49,7 +67,8 @@ dotnet build AF-SDR.sln -c Release
 | ファイル内選局 | 位置と元帯域のFFT・履歴を維持。復調・NCO・音声キューを初期化 |
 | シーク・停止・ループ | DSP、FFT平均、表示履歴、音声キューを初期化 |
 | FFT点数・窓 | FFT・表示履歴だけ初期化 |
-| FM RxBW・デジタル設定 | 対象DSPだけ初期化 |
+| FM RxBW・デジタル方式/baud等 | 対象DSPだけ初期化 |
+| デジタル手動周波数補正 | NCO位相・DSP同期・表示履歴・再生位置・FMを維持 |
 | 記録中心・I/Q入替 | 位置を維持し、解釈が変わるDSP・表示・音声を初期化 |
 
 [解析結果と詳細仕様](docs/SDRSharp-IQ-WAV-SPEC.md)。SDR#側で同じ録音を再生したI/Q方向・復調音声の比較は未確認です。PCM24/32整数、float64、モノラル、分割ファイル連結、録音中ファイル、NFMは対象外です。

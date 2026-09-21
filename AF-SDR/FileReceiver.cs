@@ -67,8 +67,10 @@ internal sealed class FileReceiver : IReceiver
 
     private void ValidateTune(uint hz, ReceiveSettings next)
     {
-        double half = Math.Max(next.FmEnabled ? next.RxBandwidth / 2.0 : 0,
-            next.DigitalOptions.Enabled ? next.DigitalOptions.ChannelCutoff : 0);
+        if (next.DigitalOptions.Enabled && Math.Abs((double)hz - recordCenter + next.DigitalOptions.FineFrequencyOffset)
+            + next.DigitalOptions.ChannelCutoff > SampleRate / 2.0)
+            throw new ArgumentException("手動周波数補正後のデジタル受信帯域が記録帯域を超えています。");
+        double half = next.FmEnabled ? next.RxBandwidth / 2.0 : 0;
         if (hz == 0 || Math.Abs((double)hz - recordCenter) + half > SampleRate / 2.0 || (double)hz - recordCenter >= SampleRate / 2.0)
             throw new ArgumentException("選局周波数と復調帯域が記録帯域を超えています。周波数またはRxBWを調整してください。");
     }
@@ -84,7 +86,7 @@ internal sealed class FileReceiver : IReceiver
             bool tune = hz != frequency;
             var change = new SettingsChange(false, next.FftSize != settings.FftSize || next.Window != settings.Window,
                 tune || next.FmEnabled != settings.FmEnabled || next.RxBandwidth != settings.RxBandwidth,
-                tune || next.DigitalOptions != settings.DigitalOptions);
+                tune || settings.DigitalOptions.RequiresReset(next.DigitalOptions));
             settings = next; frequency = hz;
             if (tune) phase = 0;
             if (change.Spectrum) ResetSpectrum();
@@ -193,7 +195,7 @@ internal sealed class FileReceiver : IReceiver
                         }
                         if (settings.DigitalOptions.Enabled && digitalFailure is null)
                         {
-                            try { digital ??= new ConstellationProcessor(SampleRate, settings.DigitalOptions); digital.Process(tuned); if (publish) Volatile.Write(ref constellation, digital.Snapshot(0)); }
+                            try { digital ??= new ConstellationProcessor(SampleRate, settings.DigitalOptions); digital.SetFineFrequencyOffset(settings.DigitalOptions.FineFrequencyOffset); digital.Process(tuned); if (publish) Volatile.Write(ref constellation, digital.Snapshot(0)); }
                             catch (Exception ex) { digitalFailure = ex; }
                         }
                     }
