@@ -275,3 +275,7 @@ QAMの粗周波数取得は±0.15 rad/symbol内を探索します。PLLで追従
 - [AF-SignalGenerator 1.0.0](Distribution/AF-SignalGenerator-1.0.0-Windows.zip) / [SHA256](Distribution/AF-SignalGenerator-1.0.0-Windows.zip.sha256)
 
 アクセス権のあるユーザーがZIPのファイル画面からダウンロードできます。ZIP全体を展開し、同梱説明書に従ってください。
+
+## ソースと配布物の公開
+
+[最新バイナリー](Distribution/README.md)からWindows版ZIPをダウンロードできます。ソース一式はこのリポジトリで公開しています。共同開発、Issues、Pull requestsは受け付けていません。

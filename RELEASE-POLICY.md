@@ -18,3 +18,11 @@ Prepare-Release.ps1は元のチェックサムを照合してコピーする。�
 公開前の準備物を取りやめた場合は、コミット・pushの対象から外す。
 
 この規則の対象は指定されたWindowsアプリ・ゲーム6件のみ。WebアプリOreComicは対象外。
+
+## ブログからの最新バイナリー導線
+
+- ブログ本文はGitHubのソース一式と `Distribution/README.md` を案内する。WordPressへ配布ZIPを新規アップロードしない。
+- 新しい配布ZIPを公開するときは、このREADMEの製品別最新版・ZIPリンク・SHA256リンクも同じコミットで更新する。過去のZIPは同じ版数で上書きしない。
+- Issues、Pull requests、Discussions、Wiki、Projects、Actionsは無効。外部の共同編集者を追加しない。
+- 秘密情報スキャンとpush protection、Dependabot通知を有効化し、既定ブランチのforce push・削除を禁止する。
+- コメント等のinteraction limitはGitHubの上限6か月で設定する。恒久設定ではないため、期限前に設定を再確認する。
