@@ -51,11 +51,11 @@ internal static class FineTuneChecks
         using (var form = new DigitalForm(new(FineFrequencyOffset: 123.4)))
         {
             var fine = Field<DigitTuningControl>(form, "fine");
-            var baud = Field<NumericUpDown>(form, "baud");
-            baud.Value = 4800; int events = 0;
+            var mode = Field<ComboBox>(form, "mode");
+            mode.SelectedIndex = (int)DigitalMode.Qam; int events = 0;
             form.SettingsChanged += () => { events++; return Task.CompletedTask; };
             fine.SelectDigit(6); fine.Adjust(1);
-            Require(events == 1 && form.Settings.FineFrequencyOffset == 123.5 && form.Settings.SymbolRate == 9600, "immediate fine event does not apply draft baud");
+            Require(events == 1 && form.Settings.FineFrequencyOffset == 123.5 && form.Settings.SymbolRate == 9600, "immediate fine event does not apply draft mode");
             form.RestoreOptions(form.Settings with { FineFrequencyOffset = -50 });
             Require(fine.Value == -50 && events == 1, "rollback/restore does not send another update");
             void Handles(Control c) { _ = c.Handle; foreach (Control child in c.Controls) Handles(child); c.PerformLayout(); }

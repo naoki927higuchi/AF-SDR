@@ -5,6 +5,14 @@ namespace AfSdr;
 internal sealed class ConstellationView : Control
 {
     private PointF[] points = [];
+    private int symbolCount = 256;
+    private bool trajectory;
+    internal ReadOnlySpan<PointF> DisplayedPoints => points.AsSpan(Math.Max(0, points.Length - symbolCount));
+    internal void SetPresentation(int count, bool showTrajectory)
+    {
+        if (!DigitalViewSettings.SymbolCounts.Contains(count)) throw new ArgumentOutOfRangeException(nameof(count));
+        symbolCount = count; trajectory = showTrajectory; Invalidate();
+    }
     private float[] trace = [];
     private DigitalSettings settings = new();
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -66,7 +74,18 @@ internal sealed class ConstellationView : Control
             g.DrawLine(reference, x, y - 4 * scale, x, y + 4 * scale);
         }
         var state = g.Save(); g.SetClip(plot);
-        foreach (var p in points)
+        var visiblePoints = DisplayedPoints;
+        if (trajectory)
+        {
+            using var trail = new Pen(Color.FromArgb(50, 88, 110), 1);
+            for (int n = 1; n < visiblePoints.Length; n++)
+            {
+                var a = visiblePoints[n - 1]; var b = visiblePoints[n];
+                if (float.IsFinite(a.X) && float.IsFinite(a.Y) && float.IsFinite(b.X) && float.IsFinite(b.Y))
+                    g.DrawLine(trail, X(a.X), Y(a.Y), X(b.X), Y(b.Y));
+            }
+        }
+        foreach (var p in visiblePoints)
             if (float.IsFinite(p.X) && float.IsFinite(p.Y)) g.FillEllipse(dot, X(p.X) - scale, Y(p.Y) - scale, 2 * scale, 2 * scale);
         g.Restore(state);
         for (int tick = 0; tick <= 4; tick++)
@@ -74,7 +93,7 @@ internal sealed class ConstellationView : Control
             double value = left + (right - left) * tick / 4;
             g.DrawString(value.ToString(settings.FrequencyMode ? "0" : "0.#"), Font, text, X(value) - 12 * scale, plot.Bottom + 2 * scale);
         }
-        string axis = settings.FrequencyMode ? "周波数偏移 (Hz) — 中心周波数からの差"
+        string axis = settings.FrequencyMode ? "周波数偏移 (Hz) — 手動周波数補正後"
             : settings.Mode == DigitalMode.Ask ? "包絡線振幅 / RMS（0＝OFF）"
             : settings.Mode == DigitalMode.Pi4Qpsk ? "cos(Δφ) / sin(Δφ) — 差動位相"
             : "正規化 I / Q  ±2";

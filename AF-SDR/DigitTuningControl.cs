@@ -14,7 +14,8 @@ internal sealed class DigitTuningControl : UserControl
     private readonly DigitSurface surface = new();
     private readonly TextBox editor = new() { Visible = false };
     private readonly ToolTip tips = new();
-    private readonly decimal minimum, maximum;
+    private decimal minimum, maximum;
+    private readonly bool showSign;
     private readonly int integerDigits, decimals;
     private readonly string unit;
     private decimal value;
@@ -34,12 +35,13 @@ internal sealed class DigitTuningControl : UserControl
     internal decimal SelectedStep => (decimal)Math.Pow(10, integerDigits - 1 - selected);
     internal bool DigitFocused => surface.Focused;
     internal void RestoreDigitFocus() { if (Visible && Enabled && !editor.Visible) surface.Focus(); }
-    private string Number => (Value < 0 ? "−" : "+") + Math.Abs(Value).ToString(new string('0', integerDigits) + (decimals > 0 ? "." + new string('0', decimals) : ""), CultureInfo.InvariantCulture);
+    private string Number => (showSign ? (Value < 0 ? "−" : "+") : "") + Math.Abs(Value).ToString(new string('0', integerDigits) + (decimals > 0 ? "." + new string('0', decimals) : ""), CultureInfo.InvariantCulture);
     private int CellWidth => Math.Max(12, (int)Math.Ceiling(surface.Font.SizeInPoints * DeviceDpi / 72 * .7));
-    private int CharacterIndex(int digit) => 1 + digit + (digit >= integerDigits && decimals > 0 ? 1 : 0);
-    internal DigitTuningControl(decimal minimum, decimal maximum, int integerDigits = 6, int decimals = 1, string unit = "Hz")
+    private int CharacterIndex(int digit) => (showSign ? 1 : 0) + digit + (digit >= integerDigits && decimals > 0 ? 1 : 0);
+    internal DigitTuningControl(decimal minimum, decimal maximum, int integerDigits = 6, int decimals = 1, string unit = "Hz", bool showSign = true)
     {
         this.minimum = minimum; this.maximum = maximum; this.integerDigits = integerDigits; this.decimals = decimals; this.unit = unit;
+        this.showSign = showSign; value = Math.Clamp(0, minimum, maximum);
         selected = integerDigits - 1;
         Size = new Size(360, 42); MinimumSize = new Size(340, 42);
         var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, Margin = Padding.Empty };
@@ -94,6 +96,11 @@ internal sealed class DigitTuningControl : UserControl
             else if (e.KeyCode == Keys.Escape) { EndEntry(); e.SuppressKeyPress = true; }
         };
         editor.Leave += (_, _) => { if (editor.Visible && CommitEntry(editor.Text)) editor.Hide(); };
+    }
+    internal void SetRange(decimal minimum, decimal maximum)
+    {
+        this.minimum = minimum; this.maximum = maximum;
+        Value = Math.Clamp(Value, minimum, maximum);
     }
     internal void SelectDigit(int digit)
     {

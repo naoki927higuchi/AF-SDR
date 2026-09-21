@@ -21,6 +21,7 @@ internal sealed record UserSettings
     public decimal LevelUpper { get; init; }
     public uint RxBandwidth { get; init; } = 200_000;
     public bool ShowRxBandwidth { get; init; } = true;
+    public DigitalViewSettings? DigitalView { get; init; } = new();
     public DigitalSettings? Digital { get; init; } = new();
     public int Volume { get; init; } = 30;
 
@@ -41,9 +42,20 @@ internal sealed record UserSettings
             LevelUpper = levelsValid ? LevelUpper : defaults.LevelUpper,
             RxBandwidth = ReceiveSettings.RxBandwidths.Contains(RxBandwidth) ? RxBandwidth : defaults.RxBandwidth,
             Volume = Math.Clamp(Volume, 0, 100),
-            Digital = (Digital ?? new()).Normalize(rate)
+            Digital = (Digital ?? new()).Normalize(rate),
+            DigitalView = (DigitalView ?? new()).Validated()
         };
     }
+}
+
+internal sealed record DigitalViewSettings
+{
+    internal static readonly int[] SymbolCounts = [64, 128, 256, 512, 1024];
+    public Rectangle WindowBounds { get; init; }
+    public bool Maximized { get; init; }
+    public int SymbolCount { get; init; } = 256;
+    public bool Trajectory { get; init; }
+    internal DigitalViewSettings Validated() => this with { SymbolCount = SymbolCounts.Contains(SymbolCount) ? SymbolCount : 256 };
 }
 
 internal static class SettingsStore

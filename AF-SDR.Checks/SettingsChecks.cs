@@ -66,6 +66,12 @@ internal static class SettingsChecks
             Require(fineChange == new SettingsChange(false, false, false, false) && receiver.DigitalRevision == digitalRevision
                 && receiver.AudioRevision == audioRevision && receiver.SpectrumRevision == specRevision && device.Configures == 1 && audio.Clears == clears,
                 "Fine tuning preserves every revision, native device and audio queue");
+            settings = settings with { Digital = settings.Digital! with { SymbolRate = 9603 } };
+            var baudChange = await receiver.UpdateAsync(80_000_000, settings);
+            Require(baudChange == new SettingsChange(false, false, false, true) && receiver.AudioRevision == audioRevision
+                && receiver.SpectrumRevision == specRevision && device.Configures == 1 && audio.Clears == clears,
+                "Symbol Rate rebuilds digital DSP only, preserving audio/FFT/device");
+            digitalRevision = receiver.DigitalRevision;
             settings = settings with { FftSize = 16384, Window = FftWindow.BlackmanHarris };
             await receiver.UpdateAsync(80_000_000, settings);
             await Until(() => receiver.Spectrum?.Length == 16384);

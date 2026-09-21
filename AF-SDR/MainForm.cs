@@ -46,7 +46,7 @@ internal sealed partial class MainForm : Form
     {
         this.settingsPath = settingsPath ?? SettingsStore.DefaultPath;
         savedSettings = SettingsStore.Load(this.settingsPath, out loadError);
-        digitalForm = new DigitalForm(savedSettings.Digital ?? new());
+        digitalForm = new DigitalForm(savedSettings.Digital ?? new(), savedSettings.DigitalView);
         digitalForm.SetSampleRate(savedSettings.SampleRate);
         digitalForm.SettingsChanged += ApplyReceiverSettingsAsync;
         lastFrequency = savedSettings.Frequency;
@@ -216,7 +216,8 @@ internal sealed partial class MainForm : Form
             LevelLower = levelLower.Value, LevelUpper = levelUpper.Value,
             RxBandwidth = ((RateOption)rxBandwidth.SelectedItem!).Hertz,
             ShowRxBandwidth = showRxBandwidth.Checked, Volume = volume.Value,
-            Digital = digitalForm.Settings with { Enabled = false }
+            Digital = digitalForm.Settings with { Enabled = false },
+            DigitalView = digitalForm.CaptureViewSettings()
         };
     }
 

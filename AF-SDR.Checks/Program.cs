@@ -79,6 +79,7 @@ internal static class Program
         int fineArgument = Array.IndexOf(args, "--fine-tune-samples");
         if (fineArgument >= 0) { fineFolder = args[fineArgument + 1]; args = args.Where((_, n) => n != fineArgument && n != fineArgument + 1).ToArray(); }
         FineTuneChecks.Run(fineFolder);
+        DigitalUxChecks.Run();
         using var form = new MainForm(Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json"));
         CreateHandles(form);
         VerifySettingsControls(form);
