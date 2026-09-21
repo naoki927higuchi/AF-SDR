@@ -263,3 +263,8 @@ QAMの粗周波数取得は±0.15 rad/symbol内を探索します。PLLで追従
 検証では0.25／2.048 MS/s、60 Hzの搬送波ずれ、100 ppmのクロックずれ、雑音を含む合成信号を使用し、QAM全点・差動位相・ASK振幅・FSK/MSK偏移と、処理ブロックを分割しても結果が変わらないことを確認しました。広い4FSK間隔、低レベル入力、設定保存・入力制限、方式変更が既存処理へ影響しないこと、各方式の描画も検証済みです。実際の無線信号での確認は未実施です。
 
 方式・同期の参照: [MathWorks Carrier Synchronizer](https://www.mathworks.com/help/comm/ref/comm.carriersynchronizer-system-object.html)、[π/4 DQPSK](https://www.mathworks.com/help/comm/ref/comm.dqpskmodulator-system-object.html)、[FSK Modulator](https://www.mathworks.com/help/comm/ref/comm.fskmodulator-system-object.html)。実装はC#で行い、外部DSP実行環境は不要です。
+
+## 配布ZIPの公開運用
+
+開発中のZIPはローカル管理のみとし、公開時に選定したZIPだけをGitHubへ送ります。
+出力先・検証・公開準備の手順は [RELEASE-POLICY.md](RELEASE-POLICY.md) を参照してください。
