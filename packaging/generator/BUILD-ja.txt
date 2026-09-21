@@ -1,0 +1,14 @@
+AF-SignalGenerator 1.0.0 ソースビルド
+
+Windows x64と.NET 9 SDKを準備し、このフォルダーで次を実行します。
+  powershell -ExecutionPolicy Bypass -File .\Build-AF-SignalGenerator.ps1
+出力: Source\AF-SignalGenerator\bin\Release\net9.0-windows\AF-SignalGenerator.exe
+
+実行には出力フォルダー内のEXE・DLL・deps.json・runtimeconfig.jsonが必要です。
+AF-SDR本体、RTL-SDR DLL、ドングル、デバイスドライバーは不要です。
+外部NuGetパッケージは使用しません。SDKの初回準備等で通信が必要になる場合があります。
+配布Sourceではcsprojを直接ビルドします。新しいslnは作成していません。
+元リポジトリでは引き続き既存のAF-SDR.slnで管理しています。
+
+全アプリケーションソース・信号モデルを同梱しています。
+ライセンスは各LICENSE-NOTICE.mdとCOPYINGを参照してください。
