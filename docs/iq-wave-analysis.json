@@ -1,0 +1,84 @@
+{
+  "source": "Z:\\DATA\\IQ\\IQ\\2023_10_17\\01\\13-46-26_283487500Hz.wav",
+  "sha256": "274bd2c786296a5505d1e8685b333fd43c81e6a36f5c0e3ffdd9c7a3481689ee",
+  "fileBytes": 14319696,
+  "container": "RF64/WAVE",
+  "riffSize": 14319688,
+  "dataSize": 14319616,
+  "sampleCount": 3579904,
+  "dataOffset": 80,
+  "formatTag": 1,
+  "channels": 2,
+  "sampleRate": 250000,
+  "byteRate": 1000000,
+  "blockAlign": 4,
+  "bitsPerSample": 16,
+  "durationSeconds": 14.319616,
+  "frequencyFromFilenameHz": 283487500,
+  "frequencyMetadataPresent": false,
+  "channelMin": [
+    -8063,
+    -8331
+  ],
+  "channelMax": [
+    8054,
+    7559
+  ],
+  "channelMean": [
+    0.26548421410183065,
+    -0.3586892274206236
+  ],
+  "channelRms": [
+    1813.1700924234917,
+    1813.9089739430094
+  ],
+  "clippedSamples": 0,
+  "firstFrames": [
+    [
+      495,
+      -1323
+    ],
+    [
+      -23,
+      -1063
+    ],
+    [
+      1534,
+      495
+    ],
+    [
+      -283,
+      -1063
+    ],
+    [
+      -803,
+      -283
+    ],
+    [
+      -802,
+      -2102
+    ],
+    [
+      -1322,
+      1015
+    ],
+    [
+      756,
+      -2361
+    ]
+  ],
+  "iqOrder": "Not encoded in WAV header. Spectrum analysis assumes channel 1 = I and channel 2 = Q.",
+  "analysisFft": {
+    "size": 16384,
+    "window": "symmetric Hann",
+    "averaging": "linear power mean, all complete nonoverlapping blocks",
+    "peakOffsetsHz": [
+      5447.3876953125,
+      -3173.828125
+    ],
+    "peakLevelsDbfsPerBin": [
+      -32.32667632311071,
+      -32.38783757669687
+    ]
+  }
+}
